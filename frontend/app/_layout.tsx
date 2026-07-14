@@ -1,19 +1,26 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { LogBox } from "react-native";
+import { LogBox, I18nManager } from "react-native";
+import { KeyboardProvider } from "react-native-keyboard-controller";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
+import { SessionProvider } from "@/src/ctx/SessionProvider";
 
+LogBox.ignoreAllLogs(true);
 
-// Disable logbox errors etc so that users can see the app
-// and agent works as expected.
-LogBox.ignoreAllLogs(true)
+// Force RTL for Arabic app
+try {
+  I18nManager.allowRTL(true);
+  if (!I18nManager.isRTL) {
+    I18nManager.forceRTL(true);
+  }
+} catch {
+  /* ignore */
+}
 
-// Keep the native splash visible from cold start until icon fonts register.
-// Required because @expo/vector-icons' componentDidMount fallback fires
-// Font.loadAsync against a broken vendor path if any <Icon> mounts before
-// the family is registered — which throws on Android Expo Go.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -25,9 +32,16 @@ export default function RootLayout() {
     }
   }, [loaded, error]);
 
-  // If the CDN is unreachable we fall through on error rather than wedging
-  // the app — icons will tofu, but the app still boots.
   if (!loaded && !error) return null;
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <SafeAreaProvider>
+      <KeyboardProvider>
+        <SessionProvider>
+          <StatusBar style="dark" />
+          <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }} />
+        </SessionProvider>
+      </KeyboardProvider>
+    </SafeAreaProvider>
+  );
 }

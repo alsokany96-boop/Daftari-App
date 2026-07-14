@@ -10,7 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.billkeeper.jm9bck"
+      "bundleIdentifier": "com.emergent.billkeeper.jm9bck",
+      "infoPlist": {
+        "NSCameraUsageDescription": "التقط صور الفواتير مع كل عملية",
+        "NSPhotoLibraryUsageDescription": "أرفق صور الفواتير من معرضك"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +22,8 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.billkeeper.jm9bck"
+      "package": "com.emergent.billkeeper.jm9bck",
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
     },
     "web": {
       "bundler": "metro",
@@ -34,6 +39,13 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#000000"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "أرفق صور الفواتير من معرضك",
+          "cameraPermission": "التقط صور الفواتير مع كل عملية"
         }
       ]
     ],
