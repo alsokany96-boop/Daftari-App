@@ -1,0 +1,72 @@
+{
+  "theme": "Light theme optimized for high readability in daylight conditions inside grocery shops.",
+  "typography": {
+    "primary_font": "Cairo or Tajawal (Ensure robust Arabic RTL support)",
+    "hierarchy": {
+      "h1": "text-3xl font-black text-slate-900 (Large, high-visibility)",
+      "h2": "text-2xl font-bold text-slate-800",
+      "h3": "text-xl font-bold text-slate-800",
+      "body_large": "text-lg font-medium text-slate-700",
+      "body": "text-base font-normal text-slate-600",
+      "amount_large": "text-4xl font-black",
+      "amount_medium": "text-2xl font-bold"
+    },
+    "guidelines": "Avoid Inter or Roboto for Arabic text. Prioritize highly legible, geometric Arabic fonts designed for UI. Ensure line height (leading) is slightly looser to accommodate Arabic diacritics."
+  },
+  "colors": {
+    "background": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "primary": "#0F172A",
+    "debt_red": "#EF4444",
+    "debt_red_bg": "#FEF2F2",
+    "payment_green": "#22C55E",
+    "payment_green_bg": "#F0FDF4",
+    "text_main": "#1E293B",
+    "text_muted": "#64748B",
+    "border": "#E2E8F0"
+  },
+  "layouts": {
+    "global_container": "flex-1 w-full bg-slate-50 relative",
+    "web_preview_constraint": "If rendering in a browser, constrain root to max-w-[390px] h-[844px] mx-auto shadow-2xl overflow-hidden (mobile viewport simulation).",
+    "rtl_strategy": "The entire app MUST be RTL. Use logical properties (`ms-`, `me-`, `text-start`, `flex-row` with `dir='rtl'`) or standard React Native `I18nManager.forceRTL(true)`.",
+    "app_bar": "flex flex-row items-center justify-between p-4 bg-white border-b border-slate-200 z-10",
+    "bottom_action_bar": "absolute bottom-0 w-full p-4 bg-white border-t border-slate-200 flex flex-row gap-4 z-20 pb-8"
+  },
+  "components": {
+    "total_debts_card": "bg-red-500 rounded-2xl p-6 shadow-lg flex flex-col items-center justify-center m-4 text-white",
+    "customer_list_card": "bg-white rounded-xl p-4 mb-3 mx-4 shadow-sm border border-slate-100 flex flex-row justify-between items-center",
+    "timeline_item": "flex flex-row items-start gap-4 py-4 border-b border-slate-100",
+    "fab": "absolute bottom-8 right-6 w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center shadow-xl z-50",
+    "action_button_debt": "flex-1 bg-red-500 active:bg-red-600 rounded-xl py-4 flex items-center justify-center shadow-md",
+    "action_button_payment": "flex-1 bg-green-500 active:bg-green-600 rounded-xl py-4 flex items-center justify-center shadow-md",
+    "whatsapp_btn": "bg-green-100 text-green-700 px-4 py-2 rounded-full flex flex-row items-center gap-2 font-bold"
+  },
+  "visual_enhancers": {
+    "shadows": "Use soft, diffuse shadows. `shadow-sm` for list items, `shadow-lg` for the main debt card to create hierarchy.",
+    "border_radius": "Generous radii (`rounded-xl` to `rounded-2xl`) for a friendly, un-intimidating feel.",
+    "spacing": "Use large tap targets. Minimum interactive area 48x48px to prevent fat-finger errors for shop owners."
+  },
+  "accessibility": {
+    "contrast": "Red and Green must meet 4.5:1 ratio against white. Use white text inside colored buttons.",
+    "hit_areas": "All buttons and list items must have generous padding (p-4 minimum).",
+    "testing": "All interactive elements MUST include a `data-testid` attribute (e.g., `data-testid='btn-add-customer'`)."
+  },
+  "image_urls": {
+    "avatar_placeholder": {
+      "url": "https://images.unsplash.com/photo-1740252117012-bb53ad05e370?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHwzfHxhdmF0YXIlMjBwbGFjZWhvbGRlcnxlbnwwfHx8fDE3ODQwNjU5OTh8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Default avatar for customers",
+      "category": "avatars"
+    }
+  },
+  "instructions_to_main_agent": [
+    "1. FRAMEWORK: This is an Expo React Native mobile app. If your environment forces web (React JS), build it as a PWA constrained to a mobile frame (max-w-[390px] h-[844px] mx-auto) to accurately reflect the mobile-only design.",
+    "2. RTL ENFORCEMENT: The app is entirely in Arabic (RTL). Ensure UI elements are mirrored correctly (e.g., icons on the right, text starting from the right).",
+    "3. TARGET AUDIENCE: Grocery shop owners. UI must be EXTREMELY simple, functional, and devoid of unnecessary visual clutter. Use large fonts.",
+    "4. COLOR CODING (CRITICAL): Red (#EF4444) strictly for Debts/Taking items. Green (#22C55E) strictly for Payments/Settling. The 'Total Debts' card on the Home Screen must be large and RED.",
+    "5. CUSTOMER DETAIL SCREEN: Must have a prominent WhatsApp reminder button, a vertical transaction timeline (Red vs Green), and two massive fixed buttons at the bottom for taking a new debt or making a payment.",
+    "6. ADD TRANSACTION SCREEN: Include a numeric input, notes field, and an icon/button to attach a receipt image.",
+    "7. ICONS: Use Lucide React (or Expo Vector Icons). DO NOT use emojis as icons. Use clear standard icons (User, Phone, Camera, Plus, Search).",
+    "8. TESTING: Apply `data-testid` to every button, card, and input to ensure robust testing."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": "Prioritize functional minimalism. Do not center-align layouts by default; respect RTL alignment (text-start / text-right). Add subtle interaction feedback (active opacities or scaling). Use solid colors for crucial buttons, avoid gradients for financial actions to maintain trust and clarity. DO NOT use transparent backgrounds for headers or sticky action bars."
+}
