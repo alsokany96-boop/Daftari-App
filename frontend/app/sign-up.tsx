@@ -37,7 +37,7 @@ export default function SignUpScreen() {
     try {
       const res = await api.register(username.trim(), password, shopName.trim() || undefined);
       await signIn(res.access_token, res.user);
-      router.replace("/(app)/home");
+      router.replace("/");
     } catch (e: any) {
       setError(e?.message || "فشل إنشاء الحساب");
     } finally {

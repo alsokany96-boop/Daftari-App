@@ -32,6 +32,9 @@ function formatAmount(n: number) {
 
 export default function HomeScreen() {
   const { user, signOut } = useSession();
+  const isEmployee = user?.role === "employee";
+  const isOwner = user?.role === "owner";
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [totalDebt, setTotalDebt] = useState(0);
   const [search, setSearch] = useState("");
@@ -41,20 +44,19 @@ export default function HomeScreen() {
   const load = useCallback(
     async (q?: string) => {
       try {
-        const [list, sum] = await Promise.all([
-          api.listCustomers(q),
-          api.summary(),
-        ]);
+        const promises: Promise<any>[] = [api.listCustomers(q)];
+        if (!isEmployee) promises.push(api.summary());
+        const [list, sum] = await Promise.all(promises);
         setCustomers(list);
-        setTotalDebt(sum.total_debt);
+        if (!isEmployee && sum) setTotalDebt(sum.total_debt);
       } catch (e) {
-        // ignore
+        /* ignore */
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    []
+    [isEmployee]
   );
 
   useFocusEffect(
@@ -116,8 +118,35 @@ export default function HomeScreen() {
       <View style={styles.appBar}>
         <View style={{ flex: 1 }}>
           <Text style={styles.appTitle}>دفتري</Text>
-          {user?.shop_name ? <Text style={styles.appSubtitle}>{user.shop_name}</Text> : null}
+          {user?.shop_name ? (
+            <Text style={styles.appSubtitle}>
+              {user.shop_name}
+              {isEmployee ? " • موظف" : ""}
+            </Text>
+          ) : isEmployee ? (
+            <Text style={styles.appSubtitle}>حساب موظف</Text>
+          ) : null}
         </View>
+        {isOwner && (
+          <>
+            <TouchableOpacity
+              testID="open-settings-button"
+              onPress={() => router.push("/(app)/settings")}
+              style={styles.iconBtn}
+              hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            >
+              <Ionicons name="settings-outline" size={24} color={colors.textMuted} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="open-staff-button"
+              onPress={() => router.push("/(app)/staff")}
+              style={styles.iconBtn}
+              hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            >
+              <Ionicons name="people-outline" size={24} color={colors.textMuted} />
+            </TouchableOpacity>
+          </>
+        )}
         <TouchableOpacity
           testID="signout-button"
           onPress={signOut}
@@ -142,16 +171,18 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Total Debt Card */}
-      <View style={styles.totalCard} testID="total-debt-card">
-        <Text style={styles.totalLabel}>إجمالي الديون المستحقة</Text>
-        <View style={styles.totalRow}>
-          <Text style={styles.totalAmount} testID="total-debt-amount">
-            {formatAmount(totalDebt)}
-          </Text>
-          <Text style={styles.totalCurrency}>{CURRENCY}</Text>
+      {/* Total Debt Card (owner only) */}
+      {!isEmployee && (
+        <View style={styles.totalCard} testID="total-debt-card">
+          <Text style={styles.totalLabel}>إجمالي الديون المستحقة</Text>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalAmount} testID="total-debt-amount">
+              {formatAmount(totalDebt)}
+            </Text>
+            <Text style={styles.totalCurrency}>{CURRENCY}</Text>
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Customer List */}
       {loading ? (
@@ -193,7 +224,7 @@ const styles = StyleSheet.create({
   appBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
@@ -201,7 +232,7 @@ const styles = StyleSheet.create({
   },
   appTitle: { fontSize: 26, fontWeight: "900", color: colors.primary, textAlign: "right" },
   appSubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2, textAlign: "right" },
-  iconBtn: { width: 44, height: 44, justifyContent: "center", alignItems: "center" },
+  iconBtn: { width: 40, height: 44, justifyContent: "center", alignItems: "center" },
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",

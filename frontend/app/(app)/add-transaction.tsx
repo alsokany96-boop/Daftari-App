@@ -8,14 +8,22 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  Modal,
+  Linking,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { api } from "@/src/utils/api";
+import { api, whatsappUrl } from "@/src/utils/api";
+import { useSession } from "@/src/ctx/SessionProvider";
 import { colors, CURRENCY } from "@/src/theme";
+import { buildTransactionMessage } from "@/src/utils/whatsapp";
+
+function formatAmount(n: number) {
+  return n.toLocaleString("ar", { maximumFractionDigits: 2 });
+}
 
 export default function AddTransactionScreen() {
   const { customerId, type } = useLocalSearchParams<{
@@ -23,6 +31,7 @@ export default function AddTransactionScreen() {
     type: "debt" | "payment";
   }>();
   const isDebt = type === "debt";
+  const { user } = useSession();
 
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
@@ -30,6 +39,13 @@ export default function AddTransactionScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
+
+  const [showReminder, setShowReminder] = useState(false);
+  const [reminderData, setReminderData] = useState<{
+    phone: string;
+    message: string;
+    newBalance: number;
+  } | null>(null);
 
   const pickFromGallery = async () => {
     setError(null);
@@ -87,6 +103,7 @@ export default function AddTransactionScreen() {
     setError(null);
     setLoading(true);
     try {
+      // Save transaction
       await api.createTransaction({
         customer_id: customerId,
         type: type as "debt" | "payment",
@@ -94,12 +111,53 @@ export default function AddTransactionScreen() {
         notes: notes.trim() || undefined,
         receipt_image: imageBase64 || undefined,
       });
-      router.back();
+
+      // Load reminder settings + fresh customer to build message
+      let reminderEnabled = true;
+      try {
+        const s = await api.getSettings();
+        reminderEnabled = !!s.reminder_enabled;
+      } catch {
+        /* default true */
+      }
+
+      if (!reminderEnabled) {
+        router.back();
+        return;
+      }
+
+      const customer = await api.getCustomer(customerId);
+      const message = buildTransactionMessage({
+        customerName: customer.name,
+        shopName: user?.shop_name || "",
+        txType: type as "debt" | "payment",
+        txAmount: formatAmount(amt),
+        newBalance: formatAmount(Math.abs(customer.total_debt)),
+        currency: CURRENCY,
+      });
+      setReminderData({
+        phone: customer.phone,
+        message,
+        newBalance: customer.total_debt,
+      });
+      setShowReminder(true);
     } catch (e: any) {
       setError(e?.message || "فشل الحفظ");
     } finally {
       setLoading(false);
     }
+  };
+
+  const sendReminder = () => {
+    if (!reminderData) return;
+    Linking.openURL(whatsappUrl(reminderData.phone, reminderData.message)).catch(() => {});
+    setShowReminder(false);
+    router.back();
+  };
+
+  const skipReminder = () => {
+    setShowReminder(false);
+    router.back();
   };
 
   const accent = isDebt ? colors.debtRed : colors.paymentGreen;
@@ -213,6 +271,53 @@ export default function AddTransactionScreen() {
           )}
         </TouchableOpacity>
       </KeyboardAwareScrollView>
+
+      {/* Post-save WhatsApp reminder prompt */}
+      <Modal
+        visible={showReminder}
+        transparent
+        animationType="fade"
+        onRequestClose={skipReminder}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent} testID="reminder-prompt-modal">
+            <View style={styles.reminderIconBox}>
+              <Ionicons name="logo-whatsapp" size={40} color={colors.white} />
+            </View>
+            <Text style={styles.modalTitle}>إرسال تذكير للزبون؟</Text>
+            <Text style={styles.modalSubtitle}>
+              تم حفظ العملية. هل تريد إعلام الزبون عبر الواتساب بالتحديث؟
+            </Text>
+
+            {reminderData && (
+              <View style={styles.previewBox}>
+                <Text style={styles.previewText} numberOfLines={4}>
+                  {reminderData.message}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              testID="reminder-send-button"
+              style={styles.waBtn}
+              onPress={sendReminder}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="logo-whatsapp" size={22} color={colors.white} />
+              <Text style={styles.waText}>إرسال عبر الواتساب</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              testID="reminder-skip-button"
+              style={styles.skipBtn}
+              onPress={skipReminder}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.skipText}>لاحقاً</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -284,4 +389,51 @@ const styles = StyleSheet.create({
     marginTop: 28,
   },
   submitText: { color: colors.white, fontSize: 18, fontWeight: "800" },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+  },
+  reminderIconBox: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    backgroundColor: colors.whatsapp,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  modalTitle: { fontSize: 20, fontWeight: "900", color: colors.textMain, marginTop: 12, textAlign: "center" },
+  modalSubtitle: { fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: "center", lineHeight: 22 },
+  previewBox: {
+    width: "100%",
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  previewText: { fontSize: 13, color: colors.textMain, textAlign: "right", lineHeight: 20 },
+  waBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: colors.whatsapp,
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginTop: 18,
+    width: "100%",
+  },
+  waText: { color: colors.white, fontSize: 16, fontWeight: "800" },
+  skipBtn: { padding: 10, marginTop: 6 },
+  skipText: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
 });

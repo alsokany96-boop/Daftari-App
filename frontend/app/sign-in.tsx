@@ -32,7 +32,7 @@ export default function SignInScreen() {
     try {
       const res = await api.login(username.trim(), password);
       await signIn(res.access_token, res.user);
-      router.replace("/(app)/home");
+      router.replace("/");
     } catch (e: any) {
       setError(e?.message || "فشل تسجيل الدخول");
     } finally {
@@ -109,6 +109,14 @@ export default function SignInScreen() {
           >
             <Text style={styles.linkText}>ليس لديك حساب؟ سجّل الآن</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            testID="signin-forgot-password"
+            onPress={() => router.push("/forgot-password")}
+            style={styles.linkBtn}
+          >
+            <Text style={styles.forgotText}>نسيت كلمة المرور؟</Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAwareScrollView>
     </SafeAreaView>
@@ -168,4 +176,5 @@ const styles = StyleSheet.create({
   submitText: { color: colors.white, fontSize: 18, fontWeight: "800" },
   linkBtn: { alignItems: "center", marginTop: 16, paddingVertical: 8 },
   linkText: { color: colors.debtRed, fontSize: 14, fontWeight: "700" },
+  forgotText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
 });

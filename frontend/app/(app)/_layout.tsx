@@ -4,7 +4,7 @@ import { useSession } from "@/src/ctx/SessionProvider";
 import { colors } from "@/src/theme";
 
 export default function AppLayout() {
-  const { token, isLoading } = useSession();
+  const { token, user, isLoading } = useSession();
 
   if (isLoading) {
     return (
@@ -14,8 +14,12 @@ export default function AppLayout() {
     );
   }
 
-  if (!token) {
+  if (!token || !user) {
     return <Redirect href="/sign-in" />;
+  }
+
+  if (!user.is_active) {
+    return <Redirect href="/subscription-lock" />;
   }
 
   return <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }} />;

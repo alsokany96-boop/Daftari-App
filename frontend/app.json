@@ -28,7 +28,15 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "دفتري",
+      "shortName": "دفتري",
+      "display": "standalone",
+      "themeColor": "#EF4444",
+      "backgroundColor": "#F8FAFC",
+      "orientation": "portrait",
+      "lang": "ar",
+      "dir": "rtl"
     },
     "plugins": [
       "expo-router",

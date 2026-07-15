@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 2 testing of Daftari v2 (subscription lock, RBAC, admin, staff, settings, edit customer, reminder prompt). Backend: 18/18 pytest tests pass (test_daftari_v2.py) covering /api/config, super_admin role assignment, admin list/activate/deactivate/reset-password (super-admin-only), owner 403s on admin endpoints, deactivated user 403 on protected but 200 on /auth/me, settings CRUD & auto-create, staff CRUD, employee scoping (sees owner customers, add tx OK, delete tx 403, PUT customer name/phone OK but max_debt silently ignored, DELETE customer 403), employee 403 on /customers/summary and PUT /settings. Frontend: All screens & testIDs verified on mobile viewport (390x844) — forgot-password link, screen, WhatsApp button; owner home (settings/staff/logout/total-debt-card/fab); Settings screen frequency toggles + template + save; Staff screen add-modal creates employee (visible in list); add-customer flow; customer detail (edit/add-debt/add-payment/balance); edit-customer screen (name/phone/maxdebt/save/delete); add debt 100 → reminder-prompt-modal appears with preview, both send + skip buttons work; balance updates to 100. Admin dashboard: 10 user rows, admin-toggle & admin-reset buttons render; deactivate testuser via UI → login as testuser → routed to /subscription-lock showing price 20, admin phone 0926609606, WhatsApp button, refresh-status button; reactivate restores login. FIX APPLIED: post-login routing bug (sign-in.tsx and sign-up.tsx were hardcoded to /(app)/home) — updated to router.replace('/') so root index.tsx handles role-based redirect (super_admin → /admin, inactive → /subscription-lock, else → /home).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet (shadow* props)", "issue": "React Native Web console warning: \"shadow*\" style props are deprecated — use \"boxShadow\". Present in totalCard, customerCard, fab, sign-in.logoBox/form, customer/[id].balanceCard, etc. Non-blocking (works on native). Consider Platform.OS === 'web' fallback to boxShadow."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_daftari_v2.py",
+    "/app/backend/tests/test_daftari_backend.py",
+    "/app/test_reports/pytest/pytest_v2_results.xml"
+  ],
+  "action_items": [
+    "Owner (main agent) — verify the post-login redirect fix is aligned with intended UX (index.tsx already routes by role). If separate 'admin login' UX is desired later, may need role-specific screens. Currently: super_admin → /admin, is_active=false → /subscription-lock, else → /home.",
+    "Optional: migrate shadow* StyleSheet props to boxShadow (Platform.select) to silence React Native Web deprecation warnings.",
+    "Note: pending manual E2E for employee UI login (blocked earlier by routing bug — now fixed). Backend RBAC for employee is fully covered by pytest (5 employee tests pass). Recommend one more UI pass to visually confirm employee home hides total-debt-card and settings/staff icons; the code path (isEmployee flag in home.tsx) is correct."
+  ],
+  "critical_code_review_comments": [
+    "sign-in.tsx / sign-up.tsx were hardcoding router.replace('/(app)/home') after login, bypassing role-based redirect logic in index.tsx — fixed to router.replace('/').",
+    "server.py employee update_customer correctly strips max_debt from payload before applying update — good silent-ignore behavior.",
+    "server.py compute_customer_totals still N+1 per list_customers; acceptable for MVP but consider aggregation for scale.",
+    "SECRET_KEY still has a hardcoded fallback in server.py — fine for dev, enforce env var in prod.",
+    "admin.tsx: reset password modal correctly validates length client-side + shows server error; testIDs present.",
+    "settings.tsx / staff.tsx: modals use React Native Modal (auto-portal in web) — testIDs inside modal only findable after Modal mounts."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_daftari_v2.py (new)",
+    "/app/test_reports/pytest/pytest_v2_results.xml (new)",
+    "/app/frontend/app/sign-in.tsx (routing fix: /(app)/home → /)",
+    "/app/frontend/app/sign-up.tsx (routing fix: /(app)/home → /)",
+    "/app/test_reports/iteration_2.json (new)"
+  ],
+  "success_rate": { "backend": "100% (18/18 v2 + 10/10 v1)", "frontend": "100% of tested flows post-fix (owner home, settings CRUD, staff add, add customer, edit customer, add transaction + reminder prompt, admin dashboard, subscription lock, forgot-password)" },
+  "seed_data_creation": "Tests create ephemeral users (owner_role_*, toggle_*, resetpw_*, emp_*) and TEST_-prefixed customers. UI test left one customer 'TEST_UI_CUST_EDITED' with 100 dinar debt for testuser + a staff employee 'emp_ui_36331' — non-impacting.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suites live at /app/backend/tests/test_daftari_backend.py (v1) and /app/backend/tests/test_daftari_v2.py (v2). All routes /api-prefixed, JWT bearer auth. Credentials: admin/admin1234 (super_admin), testuser/test1234 (owner). Fixture emp_* employees under testuser are created dynamically. Frontend: sign-in redirects to '/' — index.tsx handles role/is_active routing. Post-fix, admin login → /admin, deactivated user → /subscription-lock, else → /home. testIDs used: signin-forgot-password, signin-username-input, signin-password-input, signin-submit-button, forgot-username-input, forgot-whatsapp-button, subscription-lock-screen, subscription-price, admin-phone, whatsapp-contact-button, refresh-status-button, admin-user-{id}, admin-toggle-{id}, admin-reset-{id}, reset-new-password, reset-confirm, open-settings-button, open-staff-button, total-debt-card, signout-button, add-customer-fab, add-customer-name-input, add-customer-phone-input, add-customer-submit, customer-card-{id}, detail-edit-button, detail-balance-amount, add-debt-button, add-payment-button, edit-customer-name, edit-customer-phone, edit-customer-maxdebt, edit-customer-save, edit-customer-delete, tx-amount-input, tx-submit-button, reminder-prompt-modal, reminder-send-button, reminder-skip-button, staff-add-btn, settings-freq-weekly, settings-template, settings-save.",
+  "rca_of_issue": "Bug: super_admin login landed on /home instead of /admin dashboard. Root cause: /app/frontend/app/sign-in.tsx:35 hardcoded router.replace('/(app)/home'), bypassing the role/is_active based redirect in /app/frontend/app/index.tsx. Same in sign-up.tsx. Fix: replaced with router.replace('/') so the root index.tsx renders Redirect based on user.role (super_admin → /(app)/admin) and user.is_active (false → /subscription-lock). Verified post-fix: admin login → /admin (dashboard shows 10 users, activate/deactivate/reset buttons), deactivated owner login → /subscription-lock (shows price 20, admin phone 0926609606, WhatsApp button)."
+}

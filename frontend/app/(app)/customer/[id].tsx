@@ -12,8 +12,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { api, Customer, Transaction } from "@/src/utils/api";
+import { api, Customer, Transaction, whatsappUrl } from "@/src/utils/api";
+import { useSession } from "@/src/ctx/SessionProvider";
 import { colors, CURRENCY } from "@/src/theme";
+import { buildReminderMessage } from "@/src/utils/whatsapp";
 
 function formatDateTime(iso: string) {
   try {
@@ -36,6 +38,8 @@ function formatAmount(n: number) {
 
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useSession();
+  const isEmployee = user?.role === "employee";
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,22 +63,23 @@ export default function CustomerDetailScreen() {
     }, [load])
   );
 
-  const sendWhatsApp = () => {
+  const sendWhatsApp = async () => {
     if (!customer) return;
-    const debt = customer.total_debt;
-    const message =
-      debt > 0
-        ? `مرحباً ${customer.name}، نود تذكيرك بأن حسابك الحالي في بقالتنا هو ${formatAmount(
-            debt
-          )} ${CURRENCY}. نسعد بزيارتك.`
-        : `مرحباً ${customer.name}، نود تذكيرك بأن حسابك الحالي في بقالتنا مسدد. نسعد بزيارتك.`;
-    let phone = customer.phone.replace(/[^\d+]/g, "");
-    if (phone.startsWith("00")) phone = "+" + phone.slice(2);
-    const url = `whatsapp://send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(message)}`;
-    const fallback = `https://wa.me/${phone.replace(/^\+/, "")}?text=${encodeURIComponent(message)}`;
-    Linking.canOpenURL(url).then((can) => {
-      Linking.openURL(can ? url : fallback).catch(() => Linking.openURL(fallback));
+    let template =
+      "مرحباً {name}، نود تذكيرك بأن حسابك الحالي في {shop} هو {amount} {currency}. نسعد بزيارتك.";
+    try {
+      const s = await api.getSettings();
+      if (s?.reminder_template) template = s.reminder_template;
+    } catch {
+      /* use default */
+    }
+    const message = buildReminderMessage(template, {
+      name: customer.name,
+      shop: user?.shop_name || "بقالتنا",
+      amount: formatAmount(Math.abs(customer.total_debt)),
+      currency: CURRENCY,
     });
+    Linking.openURL(whatsappUrl(customer.phone, message)).catch(() => {});
   };
 
   const debt = customer?.total_debt ?? 0;
@@ -147,7 +152,14 @@ export default function CustomerDetailScreen() {
           <Text style={styles.headerTitle} numberOfLines={1}>{customer.name}</Text>
           <Text style={styles.headerPhone}>{customer.phone}</Text>
         </View>
-        <View style={{ width: 44 }} />
+        <TouchableOpacity
+          testID="detail-edit-button"
+          style={styles.backBtn}
+          onPress={() => router.push(`/(app)/customer/edit/${customer.id}`)}
+          hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+        >
+          <Ionicons name="create-outline" size={24} color={colors.debtRed} />
+        </TouchableOpacity>
       </View>
 
       {/* Balance & WhatsApp */}
@@ -215,6 +227,9 @@ export default function CustomerDetailScreen() {
           <Text style={styles.actionText}>دفع / سداد</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Silence unused warning for employee-specific handling */}
+      {isEmployee && null}
     </SafeAreaView>
   );
 }
