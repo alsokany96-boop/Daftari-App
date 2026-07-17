@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -15,23 +15,25 @@ import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, UserPublic } from "@/src/utils/api";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
+import { fmtDate } from "@/src/utils/format";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 function formatDate(iso?: string | null) {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleDateString("ar", { day: "2-digit", month: "2-digit", year: "numeric" });
-  } catch {
-    return "";
-  }
+  return fmtDate(iso);
 }
 
 export default function AdminDashboardScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, signOut } = useSession();
   const [users, setUsers] = useState<UserPublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSignOut, setShowSignOut] = useState(false);
+  const [pendingDeactivate, setPendingDeactivate] = useState<UserPublic | null>(null);
+  const [toggleBusy, setToggleBusy] = useState(false);
 
   const [resetTarget, setResetTarget] = useState<UserPublic | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -59,15 +61,29 @@ export default function AdminDashboardScreen() {
   );
 
   const toggleActive = async (u: UserPublic) => {
+    if (u.is_active) {
+      setPendingDeactivate(u);
+      return;
+    }
     try {
-      if (u.is_active) {
-        await api.adminDeactivate(u.id);
-      } else {
-        await api.adminActivate(u.id);
-      }
+      await api.adminActivate(u.id);
       load();
-    } catch (e) {
+    } catch {
       /* ignore */
+    }
+  };
+
+  const confirmDeactivate = async () => {
+    if (!pendingDeactivate) return;
+    setToggleBusy(true);
+    try {
+      await api.adminDeactivate(pendingDeactivate.id);
+      setPendingDeactivate(null);
+      load();
+    } catch {
+      /* ignore */
+    } finally {
+      setToggleBusy(false);
     }
   };
 
@@ -155,7 +171,7 @@ export default function AdminDashboardScreen() {
         </View>
         <TouchableOpacity
           testID="admin-signout"
-          onPress={signOut}
+          onPress={() => setShowSignOut(true)}
           style={styles.iconBtn}
           hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
         >
@@ -260,11 +276,36 @@ export default function AdminDashboardScreen() {
           </View>
         </View>
       </Modal>
+
+      <ConfirmDialog
+        visible={!!pendingDeactivate}
+        title="هل أنت متأكد من إلغاء تفعيل هذا المستخدم؟"
+        message={pendingDeactivate ? `سيُمنع ${pendingDeactivate.username} من الدخول.` : ""}
+        confirmLabel="إلغاء التفعيل"
+        onCancel={() => setPendingDeactivate(null)}
+        onConfirm={confirmDeactivate}
+        loading={toggleBusy}
+        icon="close-circle"
+        testID="deactivate-confirm"
+      />
+
+      <ConfirmDialog
+        visible={showSignOut}
+        title="هل أنت متأكد من تسجيل الخروج؟"
+        confirmLabel="تسجيل الخروج"
+        icon="log-out"
+        onCancel={() => setShowSignOut(false)}
+        onConfirm={async () => {
+          setShowSignOut(false);
+          await signOut();
+        }}
+        testID="admin-signout-confirm"
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   appBar: {
     flexDirection: "row",

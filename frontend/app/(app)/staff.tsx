@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -14,9 +14,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, UserPublic } from "@/src/utils/api";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 export default function StaffScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [staff, setStaff] = useState<UserPublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -25,6 +28,8 @@ export default function StaffScreen() {
   const [newDisplay, setNewDisplay] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<UserPublic | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -77,12 +82,19 @@ export default function StaffScreen() {
     }
   };
 
-  const remove = async (u: UserPublic) => {
+  const remove = (u: UserPublic) => setPendingDelete(u);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleteBusy(true);
     try {
-      await api.deleteStaff(u.id);
+      await api.deleteStaff(pendingDelete.id);
+      setPendingDelete(null);
       load();
     } catch {
       /* ignore */
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -226,11 +238,23 @@ export default function StaffScreen() {
           </KeyboardAwareScrollView>
         </View>
       </Modal>
+
+      <ConfirmDialog
+        visible={!!pendingDelete}
+        title="هل أنت متأكد من عملية الحذف؟"
+        message={pendingDelete ? `سيتم حذف الموظف ${pendingDelete.username} نهائياً.` : ""}
+        confirmLabel="حذف"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
+        loading={deleteBusy}
+        icon="trash"
+        testID="delete-staff-confirm"
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   centerBox: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {

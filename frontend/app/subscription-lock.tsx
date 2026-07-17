@@ -1,12 +1,18 @@
+import { useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors, CURRENCY } from "@/src/theme";
+import { useColors, ThemeColors, CURRENCY } from "@/src/theme";
 import { whatsappUrl } from "@/src/utils/api";
+import { fmtAmount } from "@/src/utils/format";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 export default function SubscriptionLockScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, config, signOut, refreshUser } = useSession();
+  const [showSignOut, setShowSignOut] = useState(false);
 
   const adminPhone = config?.admin_phone || "0926609606";
   const adminWa = config?.admin_whatsapp || "218926609606";
@@ -37,7 +43,7 @@ export default function SubscriptionLockScreen() {
         <View style={styles.priceCard}>
           <Text style={styles.priceLabel}>قيمة الاشتراك</Text>
           <View style={styles.priceRow}>
-            <Text style={styles.priceAmount} testID="subscription-price">{price}</Text>
+            <Text style={styles.priceAmount} testID="subscription-price">{fmtAmount(price)}</Text>
             <Text style={styles.priceCurrency}>{CURRENCY}</Text>
           </View>
         </View>
@@ -80,17 +86,29 @@ export default function SubscriptionLockScreen() {
         <TouchableOpacity
           testID="signout-lock-button"
           style={styles.signOutBtn}
-          onPress={signOut}
+          onPress={() => setShowSignOut(true)}
           activeOpacity={0.7}
         >
           <Text style={styles.signOutText}>تسجيل الخروج</Text>
         </TouchableOpacity>
       </ScrollView>
+      <ConfirmDialog
+        visible={showSignOut}
+        title="هل أنت متأكد من تسجيل الخروج؟"
+        confirmLabel="تسجيل الخروج"
+        icon="log-out"
+        onCancel={() => setShowSignOut(false)}
+        onConfirm={async () => {
+          setShowSignOut(false);
+          await signOut();
+        }}
+        testID="signout-lock-confirm"
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { padding: 24, alignItems: "center", flexGrow: 1 },
   iconBox: {

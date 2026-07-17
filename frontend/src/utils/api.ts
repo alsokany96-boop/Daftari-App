@@ -93,6 +93,11 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   me: () => request<UserPublic>("/auth/me"),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ ok: boolean }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
 
   listCustomers: (search?: string) =>
     request<Customer[]>(`/customers${search ? `?search=${encodeURIComponent(search)}` : ""}`),

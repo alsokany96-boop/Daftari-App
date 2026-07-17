@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
-  Platform,
   Modal,
   Linking,
 } from "react-native";
@@ -18,14 +17,14 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { api, whatsappUrl } from "@/src/utils/api";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors, CURRENCY } from "@/src/theme";
+import { useColors, ThemeColors, CURRENCY } from "@/src/theme";
+import { fmtAmount } from "@/src/utils/format";
 import { buildTransactionMessage } from "@/src/utils/whatsapp";
-
-function formatAmount(n: number) {
-  return n.toLocaleString("ar", { maximumFractionDigits: 2 });
-}
+import { resolveAmount, isFormula } from "@/src/utils/formula";
 
 export default function AddTransactionScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { customerId, type } = useLocalSearchParams<{
     customerId: string;
     type: "debt" | "payment";
@@ -41,11 +40,21 @@ export default function AddTransactionScreen() {
   const [imageBusy, setImageBusy] = useState(false);
 
   const [showReminder, setShowReminder] = useState(false);
-  const [reminderData, setReminderData] = useState<{
-    phone: string;
-    message: string;
-    newBalance: number;
-  } | null>(null);
+  const [reminderData, setReminderData] = useState<{ phone: string; message: string } | null>(null);
+
+  // Live formula evaluation
+  const computed = useMemo(() => {
+    if (!amount) return { value: null as number | null, formula: false };
+    return { value: resolveAmount(amount), formula: isFormula(amount) };
+  }, [amount]);
+
+  const commitAmount = () => {
+    if (computed.value !== null) {
+      // Replace formula with resolved value on blur (e.g. "12+5" → "17")
+      const rounded = computed.value.toString();
+      if (rounded !== amount.trim()) setAmount(rounded);
+    }
+  };
 
   const pickFromGallery = async () => {
     setError(null);
@@ -91,8 +100,8 @@ export default function AddTransactionScreen() {
   };
 
   const handleSubmit = async () => {
-    const amt = parseFloat(amount.replace(",", "."));
-    if (!amt || amt <= 0 || isNaN(amt)) {
+    const amt = resolveAmount(amount);
+    if (!amt || amt <= 0) {
       setError("الرجاء إدخال مبلغ صحيح أكبر من صفر");
       return;
     }
@@ -103,7 +112,6 @@ export default function AddTransactionScreen() {
     setError(null);
     setLoading(true);
     try {
-      // Save transaction
       await api.createTransaction({
         customer_id: customerId,
         type: type as "debt" | "payment",
@@ -112,13 +120,12 @@ export default function AddTransactionScreen() {
         receipt_image: imageBase64 || undefined,
       });
 
-      // Load reminder settings + fresh customer to build message
       let reminderEnabled = true;
       try {
         const s = await api.getSettings();
         reminderEnabled = !!s.reminder_enabled;
       } catch {
-        /* default true */
+        /* default */
       }
 
       if (!reminderEnabled) {
@@ -131,15 +138,11 @@ export default function AddTransactionScreen() {
         customerName: customer.name,
         shopName: user?.shop_name || "",
         txType: type as "debt" | "payment",
-        txAmount: formatAmount(amt),
-        newBalance: formatAmount(Math.abs(customer.total_debt)),
+        txAmount: fmtAmount(amt),
+        newBalance: fmtAmount(Math.abs(customer.total_debt)),
         currency: CURRENCY,
       });
-      setReminderData({
-        phone: customer.phone,
-        message,
-        newBalance: customer.total_debt,
-      });
+      setReminderData({ phone: customer.phone, message });
       setShowReminder(true);
     } catch (e: any) {
       setError(e?.message || "فشل الحفظ");
@@ -173,9 +176,7 @@ export default function AddTransactionScreen() {
         >
           <Ionicons name="close" size={26} color={colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {isDebt ? "إضافة دَين" : "إضافة سداد"}
-        </Text>
+        <Text style={styles.headerTitle}>{isDebt ? "إضافة دَين" : "إضافة سداد"}</Text>
         <View style={{ width: 44 }} />
       </View>
 
@@ -190,12 +191,23 @@ export default function AddTransactionScreen() {
           style={[styles.amountInput, { borderColor: accent, color: accent }]}
           value={amount}
           onChangeText={setAmount}
-          placeholder="0"
+          onBlur={commitAmount}
+          onSubmitEditing={commitAmount}
+          placeholder="مثال: 12 أو 12+5+4.5"
           placeholderTextColor={colors.textMuted}
-          keyboardType={Platform.OS === "ios" ? "decimal-pad" : "numeric"}
+          keyboardType="visible-password"
           textAlign="center"
           autoFocus
         />
+
+        <View style={styles.formulaHintRow}>
+          <Ionicons name="calculator" size={14} color={colors.textMuted} />
+          <Text style={styles.formulaHint} testID="tx-amount-hint">
+            {computed.value !== null && computed.formula
+              ? `المجموع: ${fmtAmount(computed.value)} ${CURRENCY}`
+              : "اكتب رقماً أو عملية حسابية (+ − × ÷). يقبل مثل 12+5+4.5"}
+          </Text>
+        </View>
 
         <Text style={styles.label}>ملاحظات (اختياري)</Text>
         <TextInput
@@ -252,9 +264,7 @@ export default function AddTransactionScreen() {
         )}
 
         {error && (
-          <Text style={styles.error} testID="tx-error">
-            {error}
-          </Text>
+          <Text style={styles.error} testID="tx-error">{error}</Text>
         )}
 
         <TouchableOpacity
@@ -272,13 +282,7 @@ export default function AddTransactionScreen() {
         </TouchableOpacity>
       </KeyboardAwareScrollView>
 
-      {/* Post-save WhatsApp reminder prompt */}
-      <Modal
-        visible={showReminder}
-        transparent
-        animationType="fade"
-        onRequestClose={skipReminder}
-      >
+      <Modal visible={showReminder} transparent animationType="fade" onRequestClose={skipReminder}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent} testID="reminder-prompt-modal">
             <View style={styles.reminderIconBox}>
@@ -288,15 +292,11 @@ export default function AddTransactionScreen() {
             <Text style={styles.modalSubtitle}>
               تم حفظ العملية. هل تريد إعلام الزبون عبر الواتساب بالتحديث؟
             </Text>
-
             {reminderData && (
               <View style={styles.previewBox}>
-                <Text style={styles.previewText} numberOfLines={4}>
-                  {reminderData.message}
-                </Text>
+                <Text style={styles.previewText} numberOfLines={4}>{reminderData.message}</Text>
               </View>
             )}
-
             <TouchableOpacity
               testID="reminder-send-button"
               style={styles.waBtn}
@@ -306,7 +306,6 @@ export default function AddTransactionScreen() {
               <Ionicons name="logo-whatsapp" size={22} color={colors.white} />
               <Text style={styles.waText}>إرسال عبر الواتساب</Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               testID="reminder-skip-button"
               style={styles.skipBtn}
@@ -322,118 +321,127 @@ export default function AddTransactionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  backBtn: { width: 44, height: 44, justifyContent: "center", alignItems: "center" },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: colors.white },
-  container: { padding: 20 },
-  label: { fontSize: 14, fontWeight: "700", color: colors.textMain, marginTop: 20, marginBottom: 8, textAlign: "right" },
-  amountInput: {
-    borderWidth: 2,
-    borderRadius: 16,
-    paddingVertical: 20,
-    paddingHorizontal: 14,
-    fontSize: 36,
-    fontWeight: "900",
-    backgroundColor: colors.surface,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: colors.textMain,
-    backgroundColor: colors.surface,
-  },
-  imageRow: { flexDirection: "row", gap: 12 },
-  imageBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  imageBtnText: { fontSize: 15, fontWeight: "700", color: colors.textMain },
-  imagePreviewWrap: { position: "relative" },
-  imagePreview: { width: "100%", height: 180, borderRadius: 12 },
-  removeImageBtn: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    backgroundColor: colors.debtRed,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  error: { color: colors.debtRed, marginTop: 16, textAlign: "right", fontWeight: "600" },
-  submitBtn: {
-    borderRadius: 14,
-    paddingVertical: 18,
-    alignItems: "center",
-    marginTop: 28,
-  },
-  submitText: { color: colors.white, fontSize: 18, fontWeight: "800" },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "center",
-    padding: 24,
-  },
-  modalContent: {
-    backgroundColor: colors.surface,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-  },
-  reminderIconBox: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: colors.whatsapp,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  modalTitle: { fontSize: 20, fontWeight: "900", color: colors.textMain, marginTop: 12, textAlign: "center" },
-  modalSubtitle: { fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: "center", lineHeight: 22 },
-  previewBox: {
-    width: "100%",
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  previewText: { fontSize: 13, color: colors.textMain, textAlign: "right", lineHeight: 20 },
-  waBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    backgroundColor: colors.whatsapp,
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginTop: 18,
-    width: "100%",
-  },
-  waText: { color: colors.white, fontSize: 16, fontWeight: "800" },
-  skipBtn: { padding: 10, marginTop: 6 },
-  skipText: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.background },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+    },
+    backBtn: { width: 44, height: 44, justifyContent: "center", alignItems: "center" },
+    headerTitle: { fontSize: 20, fontWeight: "800", color: colors.white },
+    container: { padding: 20 },
+    label: { fontSize: 14, fontWeight: "700", color: colors.textMain, marginTop: 20, marginBottom: 8, textAlign: "right" },
+    amountInput: {
+      borderWidth: 2,
+      borderRadius: 16,
+      paddingVertical: 20,
+      paddingHorizontal: 14,
+      fontSize: 32,
+      fontWeight: "900",
+      backgroundColor: colors.surface,
+    },
+    formulaHintRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      gap: 6,
+      marginTop: 8,
+    },
+    formulaHint: { fontSize: 13, color: colors.textMuted, fontWeight: "600", textAlign: "right" },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: colors.textMain,
+      backgroundColor: colors.surface,
+    },
+    imageRow: { flexDirection: "row", gap: 12 },
+    imageBtn: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      paddingVertical: 16,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    imageBtnText: { fontSize: 15, fontWeight: "700", color: colors.textMain },
+    imagePreviewWrap: { position: "relative" },
+    imagePreview: { width: "100%", height: 180, borderRadius: 12 },
+    removeImageBtn: {
+      position: "absolute",
+      top: 8,
+      left: 8,
+      backgroundColor: colors.debtRed,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    error: { color: colors.debtRed, marginTop: 16, textAlign: "right", fontWeight: "600" },
+    submitBtn: {
+      borderRadius: 14,
+      paddingVertical: 18,
+      alignItems: "center",
+      marginTop: 28,
+    },
+    submitText: { color: colors.white, fontSize: 18, fontWeight: "800" },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "center",
+      padding: 24,
+    },
+    modalContent: {
+      backgroundColor: colors.surface,
+      borderRadius: 24,
+      padding: 24,
+      alignItems: "center",
+    },
+    reminderIconBox: {
+      width: 72,
+      height: 72,
+      borderRadius: 20,
+      backgroundColor: colors.whatsapp,
+      justifyContent: "center",
+      alignItems: "center",
+      marginBottom: 8,
+    },
+    modalTitle: { fontSize: 20, fontWeight: "900", color: colors.textMain, marginTop: 12, textAlign: "center" },
+    modalSubtitle: { fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: "center", lineHeight: 22 },
+    previewBox: {
+      width: "100%",
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 12,
+      padding: 12,
+      marginTop: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    previewText: { fontSize: 13, color: colors.textMain, textAlign: "right", lineHeight: 20 },
+    waBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      backgroundColor: colors.whatsapp,
+      paddingVertical: 14,
+      borderRadius: 14,
+      marginTop: 18,
+      width: "100%",
+    },
+    waText: { color: colors.white, fontSize: 16, fontWeight: "800" },
+    skipBtn: { padding: 10, marginTop: 6 },
+    skipText: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
+  });

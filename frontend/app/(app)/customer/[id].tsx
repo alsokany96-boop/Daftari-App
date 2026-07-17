@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -14,35 +14,22 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, Customer, Transaction, whatsappUrl } from "@/src/utils/api";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors, CURRENCY } from "@/src/theme";
+import { useColors, ThemeColors, CURRENCY } from "@/src/theme";
+import { fmtAmount, fmtDateTime } from "@/src/utils/format";
 import { buildReminderMessage } from "@/src/utils/whatsapp";
-
-function formatDateTime(iso: string) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("ar", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-}
-
-function formatAmount(n: number) {
-  return n.toLocaleString("ar", { maximumFractionDigits: 2 });
-}
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 export default function CustomerDetailScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useSession();
-  const isEmployee = user?.role === "employee";
+  const isOwner = user?.role === "owner" || user?.role === "super_admin";
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingDeleteTx, setPendingDeleteTx] = useState<Transaction | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -50,8 +37,8 @@ export default function CustomerDetailScreen() {
       const [c, txs] = await Promise.all([api.getCustomer(id), api.listTransactions(id)]);
       setCustomer(c);
       setTransactions(txs);
-    } catch (e) {
-      // ignore
+    } catch {
+      /* ignore */
     } finally {
       setLoading(false);
     }
@@ -63,6 +50,14 @@ export default function CustomerDetailScreen() {
     }, [load])
   );
 
+  const debt = customer?.total_debt ?? 0;
+  const isDebt = debt > 0;
+  const overLimit =
+    !!customer &&
+    customer.max_debt != null &&
+    customer.max_debt > 0 &&
+    debt >= customer.max_debt;
+
   const sendWhatsApp = async () => {
     if (!customer) return;
     let template =
@@ -71,24 +66,48 @@ export default function CustomerDetailScreen() {
       const s = await api.getSettings();
       if (s?.reminder_template) template = s.reminder_template;
     } catch {
-      /* use default */
+      /* default */
     }
     const message = buildReminderMessage(template, {
       name: customer.name,
       shop: user?.shop_name || "بقالتنا",
-      amount: formatAmount(Math.abs(customer.total_debt)),
+      amount: fmtAmount(Math.abs(debt)),
       currency: CURRENCY,
     });
     Linking.openURL(whatsappUrl(customer.phone, message)).catch(() => {});
   };
 
-  const debt = customer?.total_debt ?? 0;
-  const isDebt = debt > 0;
+  const sendLimitAlert = () => {
+    if (!customer || customer.max_debt == null) return;
+    const message = `عزيزي ${customer.name}، نود تذكيرك بأن مديونيتك قد بلغت الحد الأقصى وهو ${fmtAmount(
+      customer.max_debt
+    )} ${CURRENCY}. يرجى السداد في أقرب وقت.`;
+    Linking.openURL(whatsappUrl(customer.phone, message)).catch(() => {});
+  };
+
+  const doDeleteTx = async () => {
+    if (!pendingDeleteTx) return;
+    setDeleting(true);
+    try {
+      await api.deleteTransaction(pendingDeleteTx.id);
+      setPendingDeleteTx(null);
+      load();
+    } catch {
+      /* ignore */
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const renderTx = ({ item }: { item: Transaction }) => {
     const isDebtTx = item.type === "debt";
     return (
-      <View style={styles.txCard} testID={`tx-item-${item.id}`}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onLongPress={isOwner ? () => setPendingDeleteTx(item) : undefined}
+        style={styles.txCard}
+        testID={`tx-item-${item.id}`}
+      >
         <View style={[styles.txIcon, isDebtTx ? styles.txIconDebt : styles.txIconPayment]}>
           <Ionicons
             name={isDebtTx ? "arrow-up" : "arrow-down"}
@@ -97,11 +116,9 @@ export default function CustomerDetailScreen() {
           />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.txType}>
-            {isDebtTx ? "دَين / أخذ" : "سداد / دفع"}
-          </Text>
+          <Text style={styles.txType}>{isDebtTx ? "دَين / أخذ" : "سداد / دفع"}</Text>
           {item.notes ? <Text style={styles.txNotes} numberOfLines={2}>{item.notes}</Text> : null}
-          <Text style={styles.txDate}>{formatDateTime(item.created_at)}</Text>
+          <Text style={styles.txDate}>{fmtDateTime(item.created_at)}</Text>
           {item.receipt_image ? (
             <Image
               source={{ uri: `data:image/jpeg;base64,${item.receipt_image}` }}
@@ -118,11 +135,11 @@ export default function CustomerDetailScreen() {
             ]}
           >
             {isDebtTx ? "+" : "−"}
-            {formatAmount(item.amount)}
+            {fmtAmount(item.amount)}
           </Text>
           <Text style={styles.txCurrency}>{CURRENCY}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -138,7 +155,6 @@ export default function CustomerDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           testID="detail-back"
@@ -162,41 +178,70 @@ export default function CustomerDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Balance & WhatsApp */}
-      <View style={styles.balanceCard} testID="detail-balance-card">
-        <Text style={styles.balanceLabel}>
-          {isDebt ? "الرصيد المستحق" : debt < 0 ? "دفعة مقدمة" : "لا يوجد رصيد"}
-        </Text>
-        <View style={styles.balanceRow}>
-          <Text
-            style={[
-              styles.balanceAmount,
-              { color: isDebt ? colors.debtRed : debt < 0 ? colors.paymentGreen : colors.textMuted },
-            ]}
-            testID="detail-balance-amount"
-          >
-            {formatAmount(Math.abs(debt))}
-          </Text>
-          <Text style={styles.balanceCurrency}>{CURRENCY}</Text>
-        </View>
-        <TouchableOpacity
-          testID="whatsapp-reminder-button"
-          style={styles.waBtn}
-          onPress={sendWhatsApp}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="logo-whatsapp" size={22} color={colors.white} />
-          <Text style={styles.waBtnText}>تذكير بالواتساب</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Timeline */}
-      <Text style={styles.sectionTitle}>سجل العمليات</Text>
       <FlatList
         data={transactions}
         keyExtractor={(item) => item.id}
         renderItem={renderTx}
-        contentContainerStyle={{ paddingBottom: 160, paddingHorizontal: 16 }}
+        contentContainerStyle={{ paddingBottom: 160, paddingHorizontal: 16, paddingTop: 4 }}
+        ListHeaderComponent={
+          <View>
+            <View style={styles.balanceCard} testID="detail-balance-card">
+              <Text style={styles.balanceLabel}>
+                {isDebt ? "الرصيد المستحق" : debt < 0 ? "دفعة مقدمة" : "لا يوجد رصيد"}
+              </Text>
+              <View style={styles.balanceRow}>
+                <Text
+                  style={[
+                    styles.balanceAmount,
+                    { color: isDebt ? colors.debtRed : debt < 0 ? colors.paymentGreen : colors.textMuted },
+                  ]}
+                  testID="detail-balance-amount"
+                >
+                  {fmtAmount(Math.abs(debt))}
+                </Text>
+                <Text style={styles.balanceCurrency}>{CURRENCY}</Text>
+              </View>
+              {customer.max_debt != null && customer.max_debt > 0 && (
+                <Text style={styles.limitHint}>
+                  الحد الأقصى: {fmtAmount(customer.max_debt)} {CURRENCY}
+                </Text>
+              )}
+              <TouchableOpacity
+                testID="whatsapp-reminder-button"
+                style={styles.waBtn}
+                onPress={sendWhatsApp}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="logo-whatsapp" size={22} color={colors.white} />
+                <Text style={styles.waBtnText}>تذكير بالواتساب</Text>
+              </TouchableOpacity>
+            </View>
+
+            {overLimit && (
+              <View style={styles.alertCard} testID="debt-limit-alert">
+                <View style={styles.alertIconBox}>
+                  <Ionicons name="warning" size={22} color={colors.warnText} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.alertTitle}>تجاوز حد الدين</Text>
+                  <Text style={styles.alertText}>
+                    وصل الزبون إلى الحد الأقصى ({fmtAmount(customer.max_debt!)} {CURRENCY}). يُنصح بإرسال تذكير حاسم.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  testID="limit-alert-whatsapp"
+                  style={styles.alertBtn}
+                  onPress={sendLimitAlert}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="logo-whatsapp" size={18} color={colors.white} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <Text style={styles.sectionTitle}>سجل العمليات</Text>
+          </View>
+        }
         ListEmptyComponent={
           <View style={styles.emptyBox} testID="tx-empty">
             <Ionicons name="document-text-outline" size={56} color={colors.textMuted} />
@@ -206,7 +251,6 @@ export default function CustomerDetailScreen() {
         }
       />
 
-      {/* Bottom Action Bar */}
       <View style={styles.actionBar}>
         <TouchableOpacity
           testID="add-debt-button"
@@ -228,126 +272,159 @@ export default function CustomerDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Silence unused warning for employee-specific handling */}
-      {isEmployee && null}
+      <ConfirmDialog
+        visible={!!pendingDeleteTx}
+        title="هل أنت متأكد من عملية الحذف؟"
+        message="سيتم حذف هذه العملية بشكل نهائي."
+        confirmLabel="حذف"
+        onCancel={() => setPendingDeleteTx(null)}
+        onConfirm={doDeleteTx}
+        loading={deleting}
+        icon="trash"
+        testID="delete-tx-confirm"
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  centerBox: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backBtn: { width: 44, height: 44, justifyContent: "center", alignItems: "center" },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: colors.textMain },
-  headerPhone: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  balanceCard: {
-    backgroundColor: colors.surface,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 20,
-    padding: 20,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  balanceLabel: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
-  balanceRow: { flexDirection: "row", alignItems: "baseline", marginTop: 6, gap: 8 },
-  balanceAmount: { fontSize: 40, fontWeight: "900" },
-  balanceCurrency: { fontSize: 16, color: colors.textMuted, fontWeight: "700" },
-  waBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: colors.whatsapp,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 30,
-    marginTop: 16,
-    shadowColor: colors.whatsapp,
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  waBtnText: { color: colors.white, fontSize: 16, fontWeight: "800" },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: colors.textMain,
-    marginHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 8,
-    textAlign: "right",
-  },
-  txCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 12,
-  },
-  txIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  txIconDebt: { backgroundColor: colors.debtRedBg },
-  txIconPayment: { backgroundColor: colors.paymentGreenBg },
-  txType: { fontSize: 15, fontWeight: "800", color: colors.textMain, textAlign: "right" },
-  txNotes: { fontSize: 13, color: colors.textMain, marginTop: 2, textAlign: "right" },
-  txDate: { fontSize: 12, color: colors.textMuted, marginTop: 4, textAlign: "right" },
-  txImage: { width: 80, height: 60, borderRadius: 8, marginTop: 6 },
-  txAmount: { fontSize: 18, fontWeight: "900" },
-  txCurrency: { fontSize: 11, color: colors.textMuted, fontWeight: "600" },
-  emptyBox: { alignItems: "center", paddingTop: 40, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 17, fontWeight: "800", color: colors.textMain, marginTop: 12 },
-  emptySubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 4, textAlign: "center" },
-  actionBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: "row",
-    padding: 16,
-    paddingBottom: 24,
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    gap: 12,
-  },
-  actionBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  actionText: { color: colors.white, fontSize: 16, fontWeight: "800" },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.background },
+    centerBox: { flex: 1, justifyContent: "center", alignItems: "center" },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    backBtn: { width: 44, height: 44, justifyContent: "center", alignItems: "center" },
+    headerTitle: { fontSize: 20, fontWeight: "800", color: colors.textMain },
+    headerPhone: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+    balanceCard: {
+      backgroundColor: colors.surface,
+      marginTop: 16,
+      borderRadius: 20,
+      padding: 20,
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: "#000",
+      shadowOpacity: 0.05,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 2,
+    },
+    balanceLabel: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
+    balanceRow: { flexDirection: "row", alignItems: "baseline", marginTop: 6, gap: 8 },
+    balanceAmount: { fontSize: 40, fontWeight: "900" },
+    balanceCurrency: { fontSize: 16, color: colors.textMuted, fontWeight: "700" },
+    limitHint: { color: colors.textMuted, fontSize: 12, marginTop: 6, fontWeight: "600" },
+    waBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: colors.whatsapp,
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      borderRadius: 30,
+      marginTop: 16,
+      shadowColor: colors.whatsapp,
+      shadowOpacity: 0.35,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 4,
+    },
+    waBtnText: { color: colors.white, fontSize: 16, fontWeight: "800" },
+    alertCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.warnBg,
+      borderColor: colors.warnBorder,
+      borderWidth: 1.5,
+      borderRadius: 16,
+      padding: 14,
+      marginTop: 14,
+      gap: 12,
+    },
+    alertIconBox: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.warnBorder,
+      justifyContent: "center",
+      alignItems: "center",
+      opacity: 0.9,
+    },
+    alertTitle: { fontSize: 14, fontWeight: "900", color: colors.warnText, textAlign: "right" },
+    alertText: { fontSize: 12, color: colors.warnText, marginTop: 2, textAlign: "right", lineHeight: 18 },
+    alertBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.whatsapp,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    sectionTitle: {
+      fontSize: 17,
+      fontWeight: "800",
+      color: colors.textMain,
+      marginTop: 20,
+      marginBottom: 8,
+      textAlign: "right",
+    },
+    txCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      padding: 14,
+      borderRadius: 14,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 12,
+    },
+    txIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
+    txIconDebt: { backgroundColor: colors.debtRedBg },
+    txIconPayment: { backgroundColor: colors.paymentGreenBg },
+    txType: { fontSize: 15, fontWeight: "800", color: colors.textMain, textAlign: "right" },
+    txNotes: { fontSize: 13, color: colors.textMain, marginTop: 2, textAlign: "right" },
+    txDate: { fontSize: 12, color: colors.textMuted, marginTop: 4, textAlign: "right" },
+    txImage: { width: 80, height: 60, borderRadius: 8, marginTop: 6 },
+    txAmount: { fontSize: 18, fontWeight: "900" },
+    txCurrency: { fontSize: 11, color: colors.textMuted, fontWeight: "600" },
+    emptyBox: { alignItems: "center", paddingTop: 40, paddingHorizontal: 40 },
+    emptyTitle: { fontSize: 17, fontWeight: "800", color: colors.textMain, marginTop: 12 },
+    emptySubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 4, textAlign: "center" },
+    actionBar: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      flexDirection: "row",
+      padding: 16,
+      paddingBottom: 24,
+      backgroundColor: colors.surface,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      gap: 12,
+    },
+    actionBtn: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      paddingVertical: 16,
+      borderRadius: 14,
+      shadowColor: "#000",
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 4,
+    },
+    actionText: { color: colors.white, fontSize: 16, fontWeight: "800" },
+  });

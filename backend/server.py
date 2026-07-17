@@ -144,6 +144,11 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class PublicConfig(BaseModel):
     admin_phone: str
     admin_whatsapp: str
@@ -307,6 +312,20 @@ async def login(payload: UserLogin):
 @api_router.get('/auth/me', response_model=UserPublic)
 async def me(current_user: Annotated[dict, Depends(get_current_user)]):
     return to_user_public(current_user)
+
+
+@api_router.post('/auth/change-password')
+async def change_password(payload: ChangePasswordRequest, current_user: CurrentUser):
+    if not payload.new_password or len(payload.new_password) < 4:
+        raise HTTPException(status_code=400, detail='كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل')
+    stored = await db.users.find_one({'id': current_user['id']}, {'_id': 0})
+    if not stored or not verify_password(payload.current_password, stored['password_hash']):
+        raise HTTPException(status_code=400, detail='كلمة المرور الحالية غير صحيحة')
+    await db.users.update_one(
+        {'id': current_user['id']},
+        {'$set': {'password_hash': hash_password(payload.new_password)}},
+    )
+    return {'ok': True}
 
 
 # ---------- CUSTOMERS ----------

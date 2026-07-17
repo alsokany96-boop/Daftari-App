@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -12,9 +12,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/utils/api";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
 
 export default function AddCustomerScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [maxDebt, setMaxDebt] = useState("");
@@ -122,7 +124,7 @@ export default function AddCustomerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: "row",

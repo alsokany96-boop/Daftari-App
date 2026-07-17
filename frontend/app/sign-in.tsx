@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -13,9 +13,11 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/utils/api";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
 
 export default function SignInScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { signIn } = useSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -123,7 +125,7 @@ export default function SignInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { flexGrow: 1, padding: 24, justifyContent: "center" },
   logoBox: { alignItems: "center", marginBottom: 32 },

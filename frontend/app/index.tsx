@@ -1,9 +1,12 @@
 import { Redirect } from "expo-router";
+import { useMemo } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
 
 export default function Index() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { token, user, isLoading } = useSession();
 
   if (isLoading) {
@@ -29,7 +32,7 @@ export default function Index() {
   return <Redirect href="/(app)/home" />;
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

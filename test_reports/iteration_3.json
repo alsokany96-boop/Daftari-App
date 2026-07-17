@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 3 tested the six new Daftari features on top of iteration_2. Backend: 7/7 pytest tests pass in test_change_password.py — auth-required (401), wrong current password → 400 with Arabic 'كلمة المرور الحالية غير صحيحة', new_password<4 → 400, success → {ok:true}, old password fails after change, new works, regression on customers/transactions CRUD + /api/config + /api/admin/users all pass. Frontend (mobile viewport 390x844) verified end-to-end: (1) Numbers — sign-in, home, customer detail all show 0 Eastern-Arabic digits (verified via regex scan of body text); total shows '121.5' Western. (2) Debt Limit — with max_debt=50 and total_debt=121.5, customer detail shows debt-limit-alert card + limit-alert-whatsapp button; home shows over-limit-{id} warning icon (1 icon detected). (3) Change Password — open-change-pw-button navigates to screen; mismatch shows 'تأكيد كلمة المرور لا يطابق الجديدة'; short shows 4-char error; happy path 200 + auto router.back() to home confirmed by post-success home visibility; verified round-trip by changing pw back to test1234 and confirming login still valid. (4) Signout ConfirmDialog opens on 'signout-button', title contains 'تسجيل الخروج', cancel dismisses without signing out. (5) Long-press transaction (owner) triggers delete-tx-confirm dialog with Arabic delete message 'هل أنت متأكد من عملية الحذف؟' — cancel works. edit-customer-delete opens delete-customer-confirm dialog. (6) Formula input — '12+5+4.5' shows live hint 'المجموع: 21.5 دينار', blur commits raw to '21.5', submit persists (verified 21.5 in transactions list on detail after reload). Invalid formula '12+' and unsafe input 'alert(1)' fall back to default hint (never evaluated → safe). Reminder modal appears after formula submit. (7) Theme — emulate_media(color_scheme='dark') then reload → screenshot clearly renders dark background & light text; switching back to 'light' restores light theme. Screenshots captured.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow* props", "issue": "React Native Web warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking; still working on native. Reference: multiple screens (unchanged from iter_2)."},
+      {"component": "props.pointerEvents", "issue": "React Native Web warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — likely from a third-party (react-native-safe-area-context / reanimated). Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_change_password.py",
+    "/app/test_reports/pytest/pytest_v3_results.xml"
+  ],
+  "action_items": [
+    "Optional: silence React Native Web deprecation warnings by migrating shadow* props to boxShadow via Platform.select (carry-over from iter_2).",
+    "Optional design note: on the change-password screen, on success the message renders for ~1.2s then auto-navigates back. If the user closes the screen faster they miss the toast — consider using ConfirmDialog/toast component or extending timeout to 1.8s (minor)."
+  ],
+  "critical_code_review_comments": [
+    "utils/formula.ts is well-scoped: SAFE_RE whitelist ([\\d+\\-*/.()\\s]) blocks identifiers/strings; rejects dangling operators; wraps Function() in try/catch; rounds to 2 decimals; verified with 'alert(1)' input → returns null (no eval).",
+    "utils/format.ts uses toLocaleString('en-US') — guarantees Western digits regardless of device locale; used consistently across home / detail / totals.",
+    "server.py change-password endpoint: correct — validates length before verify (400 both cases), uses stored password_hash (fetches fresh doc), hashes new password with bcrypt, returns {ok:true}. Requires CurrentUser (active) — deactivated users would 403 which is acceptable.",
+    "ConfirmDialog is well-designed & reusable: exposes testID prop, produces {testID}-cancel and {testID}-confirm children; supports danger/primary/success accents; wraps message in Text.",
+    "theme.ts useColors() switches based on useColorScheme() from RN; light/dark palettes are complete (surface, textMain, overlay, warnBg, etc.). Backward-compat 'colors' export preserved for non-refactored screens.",
+    "customer/[id].tsx debt-limit-alert uses colors.warnBg + colors.warnText correctly; WhatsApp deep-link uses whatsappUrl(customer.phone, message) with the correct Arabic limit-reached message."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_change_password.py (new)",
+    "/app/test_reports/pytest/pytest_v3_results.xml (new)",
+    "/app/test_reports/iteration_3.json (new)"
+  ],
+  "success_rate": { "backend": "100% (7/7 v3 + 18/18 v2 + 10/10 v1)", "frontend": "100% of tested new-feature flows (numbers, debt limit, change pw, signout dialog, delete dialogs, formula input, dark/light theme)" },
+  "seed_data_creation": "Ephemeral throwaway owner cpw_* created for change-password test (self-cleans by resetting to original pw). One customer (TEST_UI_CUST_EDITED) still has max_debt=50 left over from over-limit visual test — non-impacting, main agent can leave as-is or clear.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All six iter_3 features verified passing. Backend regression suites: /app/backend/tests/test_daftari_backend.py, test_daftari_v2.py, test_change_password.py. Run with EXPO_PUBLIC_BACKEND_URL env prefix. Credentials unchanged (admin/admin1234, testuser/test1234). New testIDs verified live: open-change-pw-button, change-pw-current, change-pw-new, change-pw-confirm, change-pw-submit, change-pw-error, change-pw-success, signout-button + signout-confirm + signout-confirm-cancel, delete-tx-confirm + delete-tx-confirm-cancel (long-press tx-item-*), delete-customer-confirm (edit-customer-delete), debt-limit-alert, limit-alert-whatsapp, over-limit-{id} (home warning icon), tx-amount-hint (live formula), tx-amount-input (blur commits formula → resolved value). Dark mode confirmed via page.emulate_media(color_scheme='dark') + page.reload() — theme.ts useColors() picks up useColorScheme(). Formula safety: alert(1), window.foo, or any identifier is rejected by SAFE_RE regex → default hint shown.",
+  "rca_of_issue": "No new bugs found. Continuation from iter_2 — all core flows still passing after theme/format/formula refactor."
+}

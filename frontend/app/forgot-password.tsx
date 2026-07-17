@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -12,10 +12,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
 import { whatsappUrl } from "@/src/utils/api";
 
 export default function ForgotPasswordScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { config } = useSession();
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
@@ -109,7 +111,7 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: "row",

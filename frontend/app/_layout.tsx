@@ -1,13 +1,14 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { LogBox, I18nManager } from "react-native";
+import { LogBox, I18nManager, useColorScheme, View } from "react-native";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { SessionProvider } from "@/src/ctx/SessionProvider";
+import { useColors } from "@/src/theme";
 
 LogBox.ignoreAllLogs(true);
 
@@ -22,6 +23,17 @@ try {
 }
 
 SplashScreen.preventAutoHideAsync();
+
+function ThemedRoot() {
+  const scheme = useColorScheme();
+  const colors = useColors();
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+      <Stack screenOptions={{ headerShown: false, animation: "slide_from_right", contentStyle: { backgroundColor: colors.background } }} />
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
@@ -38,8 +50,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <KeyboardProvider>
         <SessionProvider>
-          <StatusBar style="dark" />
-          <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }} />
+          <ThemedRoot />
         </SessionProvider>
       </KeyboardProvider>
     </SafeAreaProvider>

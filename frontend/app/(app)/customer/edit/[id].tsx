@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -13,9 +13,12 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/utils/api";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 export default function EditCustomerScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useSession();
   const isEmployee = user?.role === "employee";
@@ -26,6 +29,7 @@ export default function EditCustomerScreen() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -74,10 +78,11 @@ export default function EditCustomerScreen() {
     setDeleting(true);
     try {
       await api.deleteCustomer(id);
-      // Pop twice: edit -> detail -> home
+      setConfirmDelete(false);
       router.dismissTo("/(app)/home");
     } catch (e: any) {
       setError(e?.message || "فشل الحذف");
+      setConfirmDelete(false);
     } finally {
       setDeleting(false);
     }
@@ -167,72 +172,78 @@ export default function EditCustomerScreen() {
         {!isEmployee && (
           <TouchableOpacity
             testID="edit-customer-delete"
-            style={[styles.deleteBtn, deleting && { opacity: 0.7 }]}
-            onPress={doDelete}
-            disabled={deleting}
+            style={styles.deleteBtn}
+            onPress={() => setConfirmDelete(true)}
             activeOpacity={0.85}
           >
-            {deleting ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <>
-                <Ionicons name="trash" size={18} color={colors.white} />
-                <Text style={styles.deleteText}>حذف الزبون وجميع عملياته</Text>
-              </>
-            )}
+            <Ionicons name="trash" size={18} color={colors.white} />
+            <Text style={styles.deleteText}>حذف الزبون وجميع عملياته</Text>
           </TouchableOpacity>
         )}
       </KeyboardAwareScrollView>
+
+      <ConfirmDialog
+        visible={confirmDelete}
+        title="هل أنت متأكد من عملية الحذف؟"
+        message="سيتم حذف الزبون وجميع عملياته بشكل نهائي."
+        confirmLabel="حذف"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={doDelete}
+        loading={deleting}
+        icon="trash"
+        testID="delete-customer-confirm"
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  centerBox: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backBtn: { width: 44, height: 44, justifyContent: "center", alignItems: "center" },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: colors.textMain },
-  container: { padding: 20 },
-  label: { fontSize: 14, fontWeight: "700", color: colors.textMain, marginTop: 16, marginBottom: 6, textAlign: "right" },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: colors.textMain,
-    backgroundColor: colors.surface,
-  },
-  hint: { color: colors.textMuted, fontSize: 12, marginTop: 12, textAlign: "right" },
-  error: { color: colors.debtRed, marginTop: 12, textAlign: "right", fontWeight: "600" },
-  saveBtn: {
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 28,
-  },
-  saveText: { color: colors.white, fontSize: 17, fontWeight: "800" },
-  deleteBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: colors.debtRed,
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginTop: 16,
-  },
-  deleteText: { color: colors.white, fontSize: 15, fontWeight: "800" },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.background },
+    centerBox: { flex: 1, justifyContent: "center", alignItems: "center" },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    backBtn: { width: 44, height: 44, justifyContent: "center", alignItems: "center" },
+    headerTitle: { fontSize: 18, fontWeight: "800", color: colors.textMain },
+    container: { padding: 20 },
+    label: { fontSize: 14, fontWeight: "700", color: colors.textMain, marginTop: 16, marginBottom: 6, textAlign: "right" },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: colors.textMain,
+      backgroundColor: colors.surface,
+    },
+    hint: { color: colors.textMuted, fontSize: 12, marginTop: 12, textAlign: "right" },
+    error: { color: colors.debtRed, marginTop: 12, textAlign: "right", fontWeight: "600" },
+    saveBtn: {
+      backgroundColor: colors.primary,
+      paddingVertical: 16,
+      borderRadius: 14,
+      alignItems: "center",
+      marginTop: 28,
+    },
+    saveText: { color: colors.primaryText, fontSize: 17, fontWeight: "800" },
+    deleteBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      backgroundColor: colors.debtRed,
+      paddingVertical: 14,
+      borderRadius: 14,
+      marginTop: 16,
+    },
+    deleteText: { color: colors.white, fontSize: 15, fontWeight: "800" },
+  });

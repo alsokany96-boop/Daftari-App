@@ -1,9 +1,12 @@
 import { Redirect, Stack } from "expo-router";
+import { useMemo } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
 
 export default function AppLayout() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { token, user, isLoading } = useSession();
 
   if (isLoading) {
@@ -22,10 +25,10 @@ export default function AppLayout() {
     return <Redirect href="/subscription-lock" />;
   }
 
-  return <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }} />;
+  return <Stack screenOptions={{ headerShown: false, animation: "slide_from_right", contentStyle: { backgroundColor: colors.background } }} />;
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

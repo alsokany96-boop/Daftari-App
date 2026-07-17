@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, AppSettings } from "@/src/utils/api";
-import { colors } from "@/src/theme";
+import { useColors, ThemeColors } from "@/src/theme";
 
 const FREQ_OPTIONS: { key: AppSettings["reminder_frequency"]; label: string }[] = [
   { key: "daily", label: "يومياً" },
@@ -22,6 +22,8 @@ const FREQ_OPTIONS: { key: AppSettings["reminder_frequency"]; label: string }[] 
 ];
 
 export default function SettingsScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -180,7 +182,7 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   centerBox: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
