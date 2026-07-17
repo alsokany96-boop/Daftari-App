@@ -8,6 +8,8 @@ import {
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  Modal,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
@@ -21,7 +23,7 @@ import ConfirmDialog from "@/src/components/ConfirmDialog";
 export default function HomeScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { user, signOut } = useSession();
+  const { user, signOut, stores, activeStoreId, setActiveStoreId, partyType, setPartyType } = useSession();
   const isEmployee = user?.role === "employee";
   const isOwner = user?.role === "owner";
 
@@ -31,12 +33,20 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
+  const [showStorePicker, setShowStorePicker] = useState(false);
+
+  const activeStore = stores.find((s) => s.id === activeStoreId);
+  const isSupplier = partyType === "supplier";
 
   const load = useCallback(
     async (q?: string) => {
+      if (!activeStoreId) {
+        setLoading(false);
+        return;
+      }
       try {
-        const promises: Promise<any>[] = [api.listCustomers(q)];
-        if (!isEmployee) promises.push(api.summary());
+        const promises: Promise<any>[] = [api.listCustomers({ search: q, store_id: activeStoreId, party_type: partyType })];
+        if (!isEmployee) promises.push(api.summary({ store_id: activeStoreId, party_type: partyType }));
         const [list, sum] = await Promise.all(promises);
         setCustomers(list);
         if (!isEmployee && sum) setTotalDebt(sum.total_debt);
@@ -47,7 +57,7 @@ export default function HomeScreen() {
         setRefreshing(false);
       }
     },
-    [isEmployee]
+    [activeStoreId, partyType, isEmployee]
   );
 
   useFocusEffect(
@@ -66,6 +76,15 @@ export default function HomeScreen() {
     load(search);
   };
 
+  const chooseStore = async (id: string) => {
+    await setActiveStoreId(id);
+    setShowStorePicker(false);
+  };
+
+  const goAddCustomer = () => {
+    router.push(`/(app)/add-customer?party_type=${partyType}`);
+  };
+
   const renderCustomer = ({ item }: { item: Customer }) => {
     const debt = item.total_debt;
     const isDebt = debt > 0;
@@ -79,14 +98,16 @@ export default function HomeScreen() {
         onPress={() => router.push(`/(app)/customer/${item.id}`)}
         activeOpacity={0.75}
       >
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>{item.name.charAt(0)}</Text>
+        <View style={[styles.avatarCircle, isSupplier && styles.avatarCircleSupplier]}>
+          <Ionicons
+            name={isSupplier ? "business" : "person"}
+            size={22}
+            color={isSupplier ? colors.paymentGreen : colors.debtRed}
+          />
         </View>
         <View style={styles.customerInfo}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Text style={styles.customerName} numberOfLines={1}>
-              {item.name}
-            </Text>
+            <Text style={styles.customerName} numberOfLines={1}>{item.name}</Text>
             {overLimit && (
               <Ionicons name="warning" size={16} color={colors.warnText} testID={`over-limit-${item.id}`} />
             )}
@@ -117,17 +138,18 @@ export default function HomeScreen() {
       <View style={styles.appBar}>
         <View style={{ flex: 1 }}>
           <Text style={styles.appTitle}>دفتري</Text>
-          {user?.shop_name ? (
-            <Text style={styles.appSubtitle}>
-              {user.shop_name}
-              {isEmployee ? " • موظف" : ""}
-            </Text>
-          ) : isEmployee ? (
-            <Text style={styles.appSubtitle}>حساب موظف</Text>
-          ) : null}
+          {isEmployee && <Text style={styles.appSubtitle}>حساب موظف</Text>}
         </View>
         {isOwner && (
           <>
+            <TouchableOpacity
+              testID="open-verification-button"
+              onPress={() => router.push("/(app)/verification-code")}
+              style={styles.iconBtn}
+              hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            >
+              <Ionicons name="shield-checkmark-outline" size={22} color={colors.textMuted} />
+            </TouchableOpacity>
             <TouchableOpacity
               testID="open-settings-button"
               onPress={() => router.push("/(app)/settings")}
@@ -164,6 +186,57 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Store switcher */}
+      <TouchableOpacity
+        testID="store-switcher"
+        style={styles.storeSwitcher}
+        onPress={() => setShowStorePicker(true)}
+        activeOpacity={0.85}
+      >
+        <Ionicons
+          name={(activeStore?.icon as any) || "storefront"}
+          size={22}
+          color={colors.primary}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.storeLabel}>المحل الحالي</Text>
+          <Text style={styles.storeName} numberOfLines={1}>
+            {activeStore?.name || "..."}
+          </Text>
+        </View>
+        <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
+      </TouchableOpacity>
+
+      {/* Party type tabs */}
+      <View style={styles.tabs}>
+        <TouchableOpacity
+          testID="tab-customer"
+          style={[styles.tab, !isSupplier && styles.tabActive]}
+          onPress={() => setPartyType("customer")}
+          activeOpacity={0.85}
+        >
+          <Ionicons
+            name="person"
+            size={16}
+            color={!isSupplier ? colors.white : colors.textMuted}
+          />
+          <Text style={[styles.tabText, !isSupplier && styles.tabTextActive]}>الزبائن</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          testID="tab-supplier"
+          style={[styles.tab, isSupplier && styles.tabActiveGreen]}
+          onPress={() => setPartyType("supplier")}
+          activeOpacity={0.85}
+        >
+          <Ionicons
+            name="business"
+            size={16}
+            color={isSupplier ? colors.white : colors.textMuted}
+          />
+          <Text style={[styles.tabText, isSupplier && styles.tabTextActive]}>الموردين</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.searchWrap}>
         <Ionicons name="search" size={20} color={colors.textMuted} />
         <TextInput
@@ -171,15 +244,20 @@ export default function HomeScreen() {
           style={styles.searchInput}
           value={search}
           onChangeText={onSearchChange}
-          placeholder="ابحث عن زبون بالاسم..."
+          placeholder={isSupplier ? "ابحث عن مورد..." : "ابحث عن زبون..."}
           placeholderTextColor={colors.textMuted}
           textAlign="right"
         />
       </View>
 
       {!isEmployee && (
-        <View style={styles.totalCard} testID="total-debt-card">
-          <Text style={styles.totalLabel}>إجمالي الديون المستحقة</Text>
+        <View
+          style={[styles.totalCard, isSupplier && styles.totalCardSupplier]}
+          testID="total-debt-card"
+        >
+          <Text style={styles.totalLabel}>
+            {isSupplier ? "إجمالي المستحق للموردين (عليّ)" : "إجمالي الديون المستحقة (لي)"}
+          </Text>
           <View style={styles.totalRow}>
             <Text style={styles.totalAmount} testID="total-debt-amount">
               {fmtAmount(totalDebt)}
@@ -202,9 +280,11 @@ export default function HomeScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.debtRed} />}
           ListEmptyComponent={
             <View style={styles.emptyBox} testID="empty-state">
-              <Ionicons name="people-outline" size={64} color={colors.textMuted} />
-              <Text style={styles.emptyTitle}>لا يوجد زبائن بعد</Text>
-              <Text style={styles.emptySubtitle}>اضغط على الزر (+) لإضافة زبون جديد</Text>
+              <Ionicons name={isSupplier ? "business-outline" : "people-outline"} size={64} color={colors.textMuted} />
+              <Text style={styles.emptyTitle}>
+                {isSupplier ? "لا يوجد موردون بعد" : "لا يوجد زبائن بعد"}
+              </Text>
+              <Text style={styles.emptySubtitle}>اضغط على الزر (+) للإضافة</Text>
             </View>
           }
         />
@@ -212,19 +292,69 @@ export default function HomeScreen() {
 
       <TouchableOpacity
         testID="add-customer-fab"
-        style={styles.fab}
-        onPress={() => router.push("/(app)/add-customer")}
+        style={[styles.fab, isSupplier && { backgroundColor: colors.paymentGreenDark }]}
+        onPress={goAddCustomer}
         activeOpacity={0.85}
       >
         <Ionicons name="add" size={34} color={colors.white} />
       </TouchableOpacity>
+
+      {/* Store picker modal */}
+      <Modal visible={showStorePicker} transparent animationType="fade" onRequestClose={() => setShowStorePicker(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.pickerCard} testID="store-picker-modal">
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>محلاتك</Text>
+              <TouchableOpacity onPress={() => setShowStorePicker(false)} testID="store-picker-close">
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 320 }}>
+              {stores.map((s) => (
+                <TouchableOpacity
+                  key={s.id}
+                  testID={`store-item-${s.id}`}
+                  style={[styles.storeItem, activeStoreId === s.id && styles.storeItemActive]}
+                  onPress={() => chooseStore(s.id)}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons
+                    name={(s.icon as any) || "storefront"}
+                    size={22}
+                    color={activeStoreId === s.id ? colors.debtRed : colors.textMain}
+                  />
+                  <Text style={[styles.storeItemText, activeStoreId === s.id && { color: colors.debtRed }]}>
+                    {s.name}
+                  </Text>
+                  {activeStoreId === s.id && (
+                    <Ionicons name="checkmark-circle" size={20} color={colors.debtRed} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            {isOwner && (
+              <TouchableOpacity
+                testID="manage-stores-btn"
+                style={styles.manageBtn}
+                onPress={() => {
+                  setShowStorePicker(false);
+                  router.push("/(app)/stores");
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="settings" size={18} color={colors.white} />
+                <Text style={styles.manageBtnText}>إدارة المحلات</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <ConfirmDialog
         visible={showSignOut}
         title="هل أنت متأكد من تسجيل الخروج؟"
         message="سيتم إنهاء جلستك الحالية."
         confirmLabel="تسجيل الخروج"
-        confirmColor="danger"
         icon="log-out"
         onCancel={() => setShowSignOut(false)}
         onConfirm={async () => {
@@ -250,14 +380,51 @@ const makeStyles = (colors: ThemeColors) =>
       borderBottomColor: colors.border,
     },
     appTitle: { fontSize: 26, fontWeight: "900", color: colors.textMain, textAlign: "right" },
-    appSubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2, textAlign: "right" },
-    iconBtn: { width: 38, height: 44, justifyContent: "center", alignItems: "center" },
+    appSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 2, textAlign: "right" },
+    iconBtn: { width: 36, height: 44, justifyContent: "center", alignItems: "center" },
+    storeSwitcher: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      backgroundColor: colors.surface,
+      marginHorizontal: 16,
+      marginTop: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    storeLabel: { fontSize: 11, color: colors.textMuted, fontWeight: "600", textAlign: "right" },
+    storeName: { fontSize: 16, color: colors.textMain, fontWeight: "800", textAlign: "right" },
+    tabs: {
+      flexDirection: "row",
+      marginHorizontal: 16,
+      marginTop: 12,
+      gap: 8,
+    },
+    tab: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      paddingVertical: 10,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    tabActive: { backgroundColor: colors.debtRed, borderColor: colors.debtRed },
+    tabActiveGreen: { backgroundColor: colors.paymentGreen, borderColor: colors.paymentGreen },
+    tabText: { fontSize: 14, fontWeight: "800", color: colors.textMuted },
+    tabTextActive: { color: colors.white },
     searchWrap: {
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: colors.surface,
       marginHorizontal: 16,
-      marginTop: 12,
+      marginTop: 10,
       paddingHorizontal: 14,
       borderRadius: 14,
       borderWidth: 1,
@@ -268,45 +435,38 @@ const makeStyles = (colors: ThemeColors) =>
     totalCard: {
       backgroundColor: colors.debtRed,
       marginHorizontal: 16,
-      marginTop: 16,
+      marginTop: 14,
       borderRadius: 20,
-      padding: 22,
+      padding: 20,
       alignItems: "center",
-      shadowColor: colors.debtRed,
-      shadowOpacity: 0.35,
-      shadowRadius: 16,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 6,
     },
-    totalLabel: { color: "#FEE2E2", fontSize: 15, fontWeight: "600" },
-    totalRow: { flexDirection: "row", alignItems: "baseline", marginTop: 8, gap: 8 },
-    totalAmount: { color: colors.white, fontSize: 40, fontWeight: "900" },
-    totalCurrency: { color: "#FECACA", fontSize: 18, fontWeight: "700" },
+    totalCardSupplier: { backgroundColor: colors.paymentGreen },
+    totalLabel: { color: "#FFEDED", fontSize: 13, fontWeight: "600" },
+    totalRow: { flexDirection: "row", alignItems: "baseline", marginTop: 6, gap: 8 },
+    totalAmount: { color: colors.white, fontSize: 36, fontWeight: "900" },
+    totalCurrency: { color: "#FFF0F0", fontSize: 16, fontWeight: "700" },
     customerCard: {
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: colors.surface,
       marginHorizontal: 16,
-      marginTop: 12,
+      marginTop: 10,
       padding: 14,
       borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
       gap: 12,
     },
-    customerCardOverLimit: {
-      borderColor: colors.warnBorder,
-      backgroundColor: colors.warnBg,
-    },
+    customerCardOverLimit: { borderColor: colors.warnBorder, backgroundColor: colors.warnBg },
     avatarCircle: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       backgroundColor: colors.debtRedBg,
       justifyContent: "center",
       alignItems: "center",
     },
-    avatarText: { color: colors.debtRed, fontSize: 20, fontWeight: "900" },
+    avatarCircleSupplier: { backgroundColor: colors.paymentGreenBg },
     customerInfo: { flex: 1 },
     customerName: { fontSize: 17, fontWeight: "800", color: colors.textMain, textAlign: "right" },
     customerDate: { fontSize: 12, color: colors.textMuted, marginTop: 2, textAlign: "right" },
@@ -333,4 +493,35 @@ const makeStyles = (colors: ThemeColors) =>
       shadowOffset: { width: 0, height: 6 },
       elevation: 8,
     },
+    modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "center", padding: 24 },
+    pickerCard: { backgroundColor: colors.surface, borderRadius: 20, padding: 16 },
+    pickerHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 10,
+    },
+    pickerTitle: { fontSize: 18, fontWeight: "900", color: colors.textMain },
+    storeItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      padding: 14,
+      borderRadius: 12,
+      backgroundColor: colors.surfaceAlt,
+      marginTop: 8,
+    },
+    storeItemActive: { backgroundColor: colors.debtRedBg, borderWidth: 1.5, borderColor: colors.debtRed },
+    storeItemText: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.textMain, textAlign: "right" },
+    manageBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      paddingVertical: 12,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      marginTop: 14,
+    },
+    manageBtnText: { color: colors.primaryText, fontSize: 15, fontWeight: "800" },
   });

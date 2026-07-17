@@ -116,7 +116,15 @@ export default function CustomerDetailScreen() {
           />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.txType}>{isDebtTx ? "دَين / أخذ" : "سداد / دفع"}</Text>
+          <Text style={styles.txType}>
+            {isDebtTx
+              ? isSupplier
+                ? "شراء بالآجل (عليّ)"
+                : "دَين / أخذ"
+              : isSupplier
+              ? "دفعت للمورد"
+              : "سداد / دفع"}
+          </Text>
           {item.notes ? <Text style={styles.txNotes} numberOfLines={2}>{item.notes}</Text> : null}
           <Text style={styles.txDate}>{fmtDateTime(item.created_at)}</Text>
           {item.receipt_image ? (
@@ -187,7 +195,17 @@ export default function CustomerDetailScreen() {
           <View>
             <View style={styles.balanceCard} testID="detail-balance-card">
               <Text style={styles.balanceLabel}>
-                {isDebt ? "الرصيد المستحق" : debt < 0 ? "دفعة مقدمة" : "لا يوجد رصيد"}
+                {isSupplier
+                  ? isDebt
+                    ? "المستحق للمورد (عليّ)"
+                    : debt < 0
+                    ? "دفعة زائدة للمورد"
+                    : "لا يوجد رصيد"
+                  : isDebt
+                  ? "الرصيد المستحق"
+                  : debt < 0
+                  ? "دفعة مقدمة"
+                  : "لا يوجد رصيد"}
               </Text>
               <View style={styles.balanceRow}>
                 <Text
@@ -259,7 +277,7 @@ export default function CustomerDetailScreen() {
           activeOpacity={0.85}
         >
           <Ionicons name="remove-circle" size={22} color={colors.white} />
-          <Text style={styles.actionText}>أخذ / دَين</Text>
+          <Text style={styles.actionText}>{isSupplier ? "شراء آجل / عليّ" : "أخذ / دَين"}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           testID="add-payment-button"
@@ -268,7 +286,7 @@ export default function CustomerDetailScreen() {
           activeOpacity={0.85}
         >
           <Ionicons name="add-circle" size={22} color={colors.white} />
-          <Text style={styles.actionText}>دفع / سداد</Text>
+          <Text style={styles.actionText}>{isSupplier ? "دفعت له / سداد" : "دفع / سداد"}</Text>
         </TouchableOpacity>
       </View>
 

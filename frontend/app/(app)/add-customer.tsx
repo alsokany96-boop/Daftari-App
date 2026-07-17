@@ -9,14 +9,19 @@ import {
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { api } from "@/src/utils/api";
+import { api, PartyType } from "@/src/utils/api";
+import { useSession } from "@/src/ctx/SessionProvider";
 import { useColors, ThemeColors } from "@/src/theme";
 
 export default function AddCustomerScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { activeStoreId, partyType: sessionPartyType } = useSession();
+  const params = useLocalSearchParams<{ party_type?: string }>();
+  const partyType: PartyType = (params.party_type === "supplier" ? "supplier" : (sessionPartyType === "supplier" ? "supplier" : "customer"));
+  const isSupplier = partyType === "supplier";
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [maxDebt, setMaxDebt] = useState("");
@@ -32,11 +37,21 @@ export default function AddCustomerScreen() {
       setError("الرجاء إدخال رقم الهاتف");
       return;
     }
+    if (!activeStoreId) {
+      setError("الرجاء اختيار محل نشط أولاً");
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
       const md = maxDebt.trim() ? parseFloat(maxDebt.trim()) : undefined;
-      await api.createCustomer(name.trim(), phone.trim(), md);
+      await api.createCustomer({
+        name: name.trim(),
+        phone: phone.trim(),
+        max_debt: md,
+        party_type: partyType,
+        store_id: activeStoreId,
+      });
       router.back();
     } catch (e: any) {
       setError(e?.message || "فشل الحفظ");
@@ -56,7 +71,7 @@ export default function AddCustomerScreen() {
         >
           <Ionicons name="close" size={26} color={colors.textMain} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>زبون جديد</Text>
+        <Text style={styles.headerTitle}>{isSupplier ? "مورد جديد" : "زبون جديد"}</Text>
         <View style={{ width: 44 }} />
       </View>
 
@@ -65,13 +80,13 @@ export default function AddCustomerScreen() {
         bottomOffset={20}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.label}>اسم الزبون *</Text>
+        <Text style={styles.label}>{isSupplier ? "اسم المورد *" : "اسم الزبون *"}</Text>
         <TextInput
           testID="add-customer-name-input"
           style={styles.input}
           value={name}
           onChangeText={setName}
-          placeholder="مثال: أحمد محمد"
+          placeholder={isSupplier ? "مثال: شركة الشرق" : "مثال: أحمد محمد"}
           placeholderTextColor={colors.textMuted}
           textAlign="right"
         />

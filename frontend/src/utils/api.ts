@@ -1,7 +1,6 @@
 import { storage } from "@/src/utils/storage";
 
 const TOKEN_KEY = "daftari_auth_token";
-
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 async function getAuthHeader(): Promise<Record<string, string>> {
@@ -31,21 +30,33 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
 }
 
 export type Role = "super_admin" | "owner" | "employee";
+export type PartyType = "customer" | "supplier";
 
 export type UserPublic = {
   id: string;
   username: string;
   shop_name?: string | null;
   phone?: string | null;
+  email?: string | null;
   role: Role;
   is_active: boolean;
   parent_owner_id?: string | null;
   created_at?: string | null;
 };
 
+export type Store = {
+  id: string;
+  owner_id: string;
+  name: string;
+  icon?: string;
+  created_at: string;
+};
+
 export type Customer = {
   id: string;
   owner_id: string;
+  store_id: string;
+  party_type: PartyType;
   name: string;
   phone: string;
   max_debt?: number | null;
@@ -58,6 +69,8 @@ export type Transaction = {
   id: string;
   customer_id: string;
   owner_id: string;
+  store_id: string;
+  party_type: PartyType;
   author_id?: string;
   type: "debt" | "payment";
   amount: number;
@@ -80,12 +93,38 @@ export type PublicConfig = {
   free_tier_limit: number;
 };
 
+export type VerificationCodeResponse = {
+  code: string;
+  expires_at: string;
+  ttl_minutes: number;
+};
+
+export type ResetCodeRow = {
+  id: string;
+  code: string;
+  user_id: string;
+  username: string;
+  phone?: string | null;
+  email?: string | null;
+  expires_at: string;
+  used_at?: string | null;
+  created_at: string;
+};
+
+function qs(params: Record<string, string | undefined>): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") parts.push(`${k}=${encodeURIComponent(v)}`);
+  }
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
 export const api = {
   config: () => request<PublicConfig>("/config"),
-  register: (username: string, password: string, shop_name?: string, phone?: string) =>
+  register: (username: string, password: string, shop_name?: string, phone?: string, email?: string) =>
     request<{ access_token: string; user: UserPublic }>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ username, password, shop_name, phone }),
+      body: JSON.stringify({ username, password, shop_name, phone, email }),
     }),
   login: (username: string, password: string) =>
     request<{ access_token: string; user: UserPublic }>("/auth/login", {
@@ -93,25 +132,57 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   me: () => request<UserPublic>("/auth/me"),
-  changePassword: (current_password: string, new_password: string) =>
+  changePassword: (current_password: string, new_password: string, verification_code?: string) =>
     request<{ ok: boolean }>("/auth/change-password", {
       method: "POST",
-      body: JSON.stringify({ current_password, new_password }),
+      body: JSON.stringify({ current_password, new_password, verification_code }),
+    }),
+  forgotPin: (username: string) =>
+    request<{ ok: boolean; delivery: string; ttl_minutes: number }>("/auth/forgot-pin", {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    }),
+  resetPin: (username: string, code: string, new_password: string) =>
+    request<{ ok: boolean }>("/auth/reset-pin", {
+      method: "POST",
+      body: JSON.stringify({ username, code, new_password }),
     }),
 
-  listCustomers: (search?: string) =>
-    request<Customer[]>(`/customers${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+  // Stores
+  listStores: () => request<Store[]>("/stores"),
+  createStore: (name: string, icon?: string) =>
+    request<Store>("/stores", { method: "POST", body: JSON.stringify({ name, icon }) }),
+  updateStore: (id: string, payload: { name?: string; icon?: string }) =>
+    request<Store>(`/stores/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteStore: (id: string) =>
+    request<{ ok: boolean }>(`/stores/${id}`, { method: "DELETE" }),
+
+  // Owner verification code
+  createVerificationCode: () =>
+    request<VerificationCodeResponse>("/owner/verification-codes", { method: "POST" }),
+
+  // Customers / suppliers (parties)
+  listCustomers: (options?: { search?: string; store_id?: string; party_type?: PartyType }) =>
+    request<Customer[]>(
+      `/customers${qs({ search: options?.search, store_id: options?.store_id, party_type: options?.party_type })}`
+    ),
   getCustomer: (id: string) => request<Customer>(`/customers/${id}`),
-  createCustomer: (name: string, phone: string, max_debt?: number) =>
-    request<Customer>("/customers", {
-      method: "POST",
-      body: JSON.stringify({ name, phone, max_debt }),
-    }),
+  createCustomer: (payload: {
+    name: string;
+    phone: string;
+    max_debt?: number;
+    party_type: PartyType;
+    store_id: string;
+  }) => request<Customer>("/customers", { method: "POST", body: JSON.stringify(payload) }),
   updateCustomer: (id: string, payload: { name?: string; phone?: string; max_debt?: number | null }) =>
     request<Customer>(`/customers/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteCustomer: (id: string) => request<{ ok: boolean }>(`/customers/${id}`, { method: "DELETE" }),
-  summary: () => request<{ total_debt: number }>("/customers/summary"),
+  summary: (options?: { store_id?: string; party_type?: PartyType }) =>
+    request<{ total_debt: number }>(
+      `/customers/summary${qs({ store_id: options?.store_id, party_type: options?.party_type })}`
+    ),
 
+  // Transactions
   listTransactions: (customerId: string) =>
     request<Transaction[]>(`/transactions/${customerId}`),
   createTransaction: (payload: {
@@ -124,6 +195,7 @@ export const api = {
   deleteTransaction: (id: string) =>
     request<{ ok: boolean }>(`/transactions/${id}`, { method: "DELETE" }),
 
+  // Settings
   getSettings: () => request<AppSettings>("/settings"),
   updateSettings: (payload: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(payload) }),
@@ -141,18 +213,16 @@ export const api = {
 
   // Admin
   adminListUsers: () => request<UserPublic[]>("/admin/users"),
-  adminActivate: (id: string) =>
-    request<UserPublic>(`/admin/users/${id}/activate`, { method: "PUT" }),
-  adminDeactivate: (id: string) =>
-    request<UserPublic>(`/admin/users/${id}/deactivate`, { method: "PUT" }),
+  adminActivate: (id: string) => request<UserPublic>(`/admin/users/${id}/activate`, { method: "PUT" }),
+  adminDeactivate: (id: string) => request<UserPublic>(`/admin/users/${id}/deactivate`, { method: "PUT" }),
   adminResetPassword: (id: string, new_password: string) =>
     request<UserPublic>(`/admin/users/${id}/reset-password`, {
       method: "PUT",
       body: JSON.stringify({ new_password }),
     }),
+  adminListResetCodes: () => request<ResetCodeRow[]>("/admin/reset-codes"),
 };
 
-// WhatsApp helper
 export function whatsappUrl(phone: string, message: string): string {
   let p = (phone || "").replace(/[^\d+]/g, "");
   if (p.startsWith("00")) p = p.slice(2);

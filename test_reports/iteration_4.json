@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 4 (Multi-store + suppliers + employee owner-code + forgot-pin OTP) FULLY VERIFIED — 15/15 new backend tests pass (test_daftari_v4.py), 25/25 v2+v3 regression tests still green, all 21 UI feature slices verified live on the Expo web preview (390x844).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow* props", "issue": "React Native Web deprecation warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking; carry-over from iter_3."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_daftari_v4.py",
+    "/app/test_reports/pytest/pytest_v4_results.xml"
+  ],
+  "action_items": [
+    "Optional cleanup: legacy customer 'TEST_UI_CUST_EDITED' (max_debt=50, total 121.5) still lives on testuser's default store from iter_3 — not blocking, main agent can leave as-is.",
+    "Optional cleanup: iter_4 UI test created a store 'محل B' and 'TEST_UI_B' on testuser — main agent may delete via /stores UI or leave for regression."
+  ],
+  "critical_code_review_comments": [
+    "server.py multi-store implementation is clean: ensure_default_store() is idempotent, resolve_store_id() enforces ownership (404 if mismatch), delete_store cascades customers+transactions in same store scope with count guard preventing last-store deletion.",
+    "list_customers defaults party_type to 'customer' when omitted (backward-compat) — matches spec. Supplier scoping is per-store, so supplier totals in /customers/summary are also store+party-scoped.",
+    "change_password endpoint enforces verification_code ONLY for role=='employee' — owners bypass this gate correctly. Codes are single-use (used_at set atomically after validation), and previously-unused codes for the same owner are invalidated when a new one is generated.",
+    "forgot-pin returns 200 for unknown users (no enumeration) AND ignores employees (they have no reset flow) — matches spec. reset_codes docs include username/phone/email so admin can identify who to relay to.",
+    "GET /api/admin/reset-codes filters expired codes in-python before returning — simple but correct; consider adding TTL index on reset_codes.expires_at in a future iteration.",
+    "Migration on startup backfills store_id + party_type on legacy customers/transactions — verified iter_3 leftover customer is now visible under 'المحل الرئيسي' with party_type='customer'.",
+    "Frontend: home.tsx conditionally renders open-verification-button / open-settings-button / open-staff-button by role — employee login correctly shows none of them (verified live). change-password screen surfaces change-pw-vc + change-pw-employee-hint only for employees.",
+    "Frontend: forgot-password 2-step flow correctly transitions after /auth/forgot-pin (always 200) and exposes the admin WhatsApp deep-link button — good UX for admin-relay OTP model."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_daftari_v4.py (new)",
+    "/app/test_reports/pytest/pytest_v4_results.xml (new)",
+    "/app/test_reports/iteration_4.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 v4 + 18/18 v2 + 7/7 v3 + 10/10 v1)",
+    "frontend": "100% of tested new-feature flows (store-switcher, picker modal, supplier tab + empty state + green FAB + total label, verification-code generate + share, stores add/edit/delete UI, employee home hides owner buttons, employee change-pw shows vc field + hint + Arabic error, forgot-pw 2-step + reset-error path)"
+  },
+  "seed_data_creation": "Backend tests: fresh v4own_*/v4solo_*/v4fp_* owners, v4emp_* employees, TEST_ScopedA/TEST_StoreB/TEST_ScratchStore customers/stores (self-managed inside tests, mostly ephemeral). UI test created: employee 'uiemp_ea979' under testuser (pw emp1234 — password unchanged because verification code was NOT provided), store 'TEST_UI_B' + 'محل B' on testuser stores list.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All iter_4 backend + frontend features are verified passing. Regression suites (run in this order): test_daftari_backend.py → test_daftari_v2.py → test_change_password.py → test_daftari_v4.py. Env: EXPO_PUBLIC_BACKEND_URL. Credentials unchanged (admin/admin1234, testuser/test1234). New testIDs verified live on the preview URL: store-switcher, store-picker-modal, store-item-*, store-picker-close, manage-stores-btn, tab-customer, tab-supplier, open-verification-button, vc-generate, vc-code, vc-share, stores-add-btn, store-add-name, store-add-confirm, store-edit-*, store-delete-* (visible), change-pw-vc, change-pw-employee-hint, forgot-username-input, forgot-request-code, forgot-whatsapp-button, reset-code-input, reset-new-pass, reset-confirm-pass, reset-submit, reset-error. Fresh helper employee 'uiemp_ea979/emp1234' exists under testuser if you need one. For forgot-pin OTP retrieval, use admin token → GET /api/admin/reset-codes (already covered by test_forgot_and_reset_owner).",
+  "rca_of_issue": "No bugs found in iter_4 scope. All 21 features from the review request are working end-to-end."
+}

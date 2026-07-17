@@ -12,15 +12,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/utils/api";
+import { useSession } from "@/src/ctx/SessionProvider";
 import { useColors, ThemeColors } from "@/src/theme";
 
 export default function ChangePasswordScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { user } = useSession();
+  const isEmployee = user?.role === "employee";
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -28,6 +32,10 @@ export default function ChangePasswordScreen() {
   const submit = async () => {
     if (!current || !next || !confirmPw) {
       setError("الرجاء تعبئة جميع الحقول");
+      return;
+    }
+    if (isEmployee && !verificationCode.trim()) {
+      setError("مطلوب رمز موافقة المالك");
       return;
     }
     if (next.length < 4) {
@@ -42,12 +50,13 @@ export default function ChangePasswordScreen() {
     setSuccess(null);
     setLoading(true);
     try {
-      await api.changePassword(current, next);
+      await api.changePassword(current, next, isEmployee ? verificationCode.trim() : undefined);
       setSuccess("تم تحديث كلمة المرور بنجاح");
       setCurrent("");
       setNext("");
       setConfirmPw("");
-      setTimeout(() => router.back(), 1200);
+      setVerificationCode("");
+      setTimeout(() => router.back(), 1500);
     } catch (e: any) {
       setError(e?.message || "فشل التحديث");
     } finally {
@@ -110,6 +119,26 @@ export default function ChangePasswordScreen() {
           secureTextEntry
           textAlign="right"
         />
+
+        {isEmployee && (
+          <>
+            <Text style={styles.label}>رمز موافقة المالك *</Text>
+            <TextInput
+              testID="change-pw-vc"
+              style={styles.input}
+              value={verificationCode}
+              onChangeText={setVerificationCode}
+              placeholder="6 أرقام من المالك"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              maxLength={8}
+              textAlign="center"
+            />
+            <Text style={styles.hint} testID="change-pw-employee-hint">
+              يتطلب حسابك رمز موافقة من المالك. اطلب من المالك توليد الرمز من قسم رمز موافقة الموظف.
+            </Text>
+          </>
+        )}
 
         {error && (
           <Text style={styles.error} testID="change-pw-error">{error}</Text>
@@ -182,6 +211,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     error: { color: colors.debtRed, marginTop: 14, textAlign: "right", fontWeight: "700" },
     success: { color: colors.paymentGreen, marginTop: 14, textAlign: "right", fontWeight: "700" },
+    hint: { color: colors.textMuted, fontSize: 12, marginTop: 8, textAlign: "right", lineHeight: 20 },
     submitBtn: {
       backgroundColor: colors.primary,
       paddingVertical: 16,
