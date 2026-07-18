@@ -52,6 +52,7 @@ export default function CustomerDetailScreen() {
 
   const debt = customer?.total_debt ?? 0;
   const isDebt = debt > 0;
+  const isSupplier = customer?.party_type === "supplier";
   const overLimit =
     !!customer &&
     customer.max_debt != null &&
