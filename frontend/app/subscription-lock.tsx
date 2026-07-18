@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSession } from "@/src/ctx/SessionProvider";
 import { useColors, ThemeColors, CURRENCY } from "@/src/theme";
@@ -13,6 +14,15 @@ export default function SubscriptionLockScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, config, signOut, refreshUser } = useSession();
   const [showSignOut, setShowSignOut] = useState(false);
+
+  // Once the user becomes active again (admin activated / extended subscription
+  // OR the customer count went back under the free-tier limit), bounce back
+  // through the root redirect so the normal home/admin screen loads.
+  useEffect(() => {
+    if (user && user.is_active && !user.is_locked) {
+      router.replace("/");
+    }
+  }, [user]);
 
   const adminPhone = config?.admin_phone || "0926609606";
   const adminWa = config?.admin_whatsapp || "218926609606";
