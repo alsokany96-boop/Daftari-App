@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Linking,
   Image,
+  Modal,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -30,6 +32,11 @@ export default function CustomerDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [pendingDeleteTx, setPendingDeleteTx] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -100,15 +107,48 @@ export default function CustomerDetailScreen() {
     }
   };
 
+  const openEditTx = (t: Transaction) => {
+    setEditingTx(t);
+    setEditAmount(String(t.amount));
+    setEditNotes(t.notes || "");
+    setEditError(null);
+  };
+
+  const closeEditTx = () => {
+    setEditingTx(null);
+    setEditAmount("");
+    setEditNotes("");
+    setEditError(null);
+  };
+
+  const saveEditTx = async () => {
+    if (!editingTx) return;
+    const cleaned = editAmount.trim().replace(",", ".");
+    const amt = parseFloat(cleaned);
+    if (!isFinite(amt) || amt <= 0) {
+      setEditError("الرجاء إدخال مبلغ صحيح أكبر من صفر");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await api.updateTransaction(editingTx.id, {
+        amount: amt,
+        notes: editNotes.trim(),
+      });
+      closeEditTx();
+      await load();
+    } catch (e: any) {
+      setEditError(e?.message || "فشل التحديث");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const renderTx = ({ item }: { item: Transaction }) => {
     const isDebtTx = item.type === "debt";
     return (
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onLongPress={isOwner ? () => setPendingDeleteTx(item) : undefined}
-        style={styles.txCard}
-        testID={`tx-item-${item.id}`}
-      >
+      <View style={styles.txCard} testID={`tx-item-${item.id}`}>
         <View style={[styles.txIcon, isDebtTx ? styles.txIconDebt : styles.txIconPayment]}>
           <Ionicons
             name={isDebtTx ? "arrow-up" : "arrow-down"}
@@ -136,7 +176,7 @@ export default function CustomerDetailScreen() {
             />
           ) : null}
         </View>
-        <View style={{ alignItems: "flex-start" }}>
+        <View style={{ alignItems: "flex-start", gap: 6 }}>
           <Text
             style={[
               styles.txAmount,
@@ -147,8 +187,28 @@ export default function CustomerDetailScreen() {
             {fmtAmount(item.amount)}
           </Text>
           <Text style={styles.txCurrency}>{CURRENCY}</Text>
+          {isOwner && (
+            <View style={styles.txActionsRow}>
+              <TouchableOpacity
+                testID={`tx-edit-${item.id}`}
+                onPress={() => openEditTx(item)}
+                style={[styles.txActionBtn, styles.txEditBtn]}
+                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              >
+                <Ionicons name="pencil" size={14} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`tx-delete-${item.id}`}
+                onPress={() => setPendingDeleteTx(item)}
+                style={[styles.txActionBtn, styles.txDeleteBtn]}
+                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              >
+                <Ionicons name="trash" size={14} color={colors.debtRed} />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -302,6 +362,84 @@ export default function CustomerDetailScreen() {
         icon="trash"
         testID="delete-tx-confirm"
       />
+
+      {/* Edit transaction modal */}
+      <Modal
+        visible={!!editingTx}
+        transparent
+        animationType="fade"
+        onRequestClose={closeEditTx}
+      >
+        <View style={styles.editOverlay}>
+          <View style={styles.editCard} testID="edit-tx-modal">
+            <View style={styles.editHeader}>
+              <Ionicons name="pencil" size={22} color={colors.primary} />
+              <Text style={styles.editTitle}>تعديل العملية</Text>
+            </View>
+            <Text style={styles.editSubtitle}>
+              {editingTx?.type === "debt"
+                ? isSupplier
+                  ? "شراء بالآجل (عليّ)"
+                  : "دَين / أخذ"
+                : isSupplier
+                ? "دفعت للمورد"
+                : "سداد / دفع"}
+            </Text>
+
+            <Text style={styles.editLabel}>المبلغ ({CURRENCY}) *</Text>
+            <TextInput
+              testID="edit-tx-amount"
+              style={styles.editAmountInput}
+              value={editAmount}
+              onChangeText={setEditAmount}
+              keyboardType="decimal-pad"
+              textAlign="center"
+              autoFocus
+            />
+
+            <Text style={styles.editLabel}>ملاحظات</Text>
+            <TextInput
+              testID="edit-tx-notes"
+              style={styles.editNotesInput}
+              value={editNotes}
+              onChangeText={setEditNotes}
+              placeholder="اختياري"
+              placeholderTextColor={colors.textMuted}
+              textAlign="right"
+              multiline
+            />
+
+            {editError && (
+              <Text style={styles.editError} testID="edit-tx-error">
+                {editError}
+              </Text>
+            )}
+
+            <View style={styles.editActions}>
+              <TouchableOpacity
+                testID="edit-tx-cancel"
+                style={[styles.editBtn, styles.editCancelBtn]}
+                onPress={closeEditTx}
+                disabled={editSaving}
+              >
+                <Text style={styles.editCancelText}>إلغاء</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="edit-tx-save"
+                style={[styles.editBtn, styles.editSaveBtn, editSaving && { opacity: 0.7 }]}
+                onPress={saveEditTx}
+                disabled={editSaving}
+              >
+                {editSaving ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.editSaveText}>حفظ</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -415,6 +553,92 @@ const makeStyles = (colors: ThemeColors) =>
     txImage: { width: 80, height: 60, borderRadius: 8, marginTop: 6 },
     txAmount: { fontSize: 18, fontWeight: "900" },
     txCurrency: { fontSize: 11, color: colors.textMuted, fontWeight: "600" },
+    txActionsRow: { flexDirection: "row", gap: 4, marginTop: 6 },
+    txActionBtn: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      justifyContent: "center",
+      alignItems: "center",
+      borderWidth: 1,
+    },
+    txEditBtn: { borderColor: colors.border, backgroundColor: colors.surfaceAlt },
+    txDeleteBtn: { borderColor: colors.debtRedBg, backgroundColor: colors.debtRedBg },
+    editOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "center",
+      padding: 24,
+    },
+    editCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 22,
+      padding: 22,
+    },
+    editHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+    editTitle: {
+      flex: 1,
+      fontSize: 18,
+      fontWeight: "900",
+      color: colors.textMain,
+      textAlign: "right",
+    },
+    editSubtitle: {
+      color: colors.textMuted,
+      fontSize: 13,
+      fontWeight: "700",
+      marginTop: 6,
+      textAlign: "right",
+    },
+    editLabel: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: colors.textMain,
+      marginTop: 18,
+      marginBottom: 6,
+      textAlign: "right",
+    },
+    editAmountInput: {
+      borderWidth: 2,
+      borderColor: colors.border,
+      borderRadius: 14,
+      paddingVertical: 14,
+      paddingHorizontal: 12,
+      fontSize: 30,
+      fontWeight: "900",
+      color: colors.textMain,
+      backgroundColor: colors.background,
+    },
+    editNotesInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
+      color: colors.textMain,
+      backgroundColor: colors.background,
+      minHeight: 60,
+      textAlignVertical: "top",
+    },
+    editError: {
+      color: colors.debtRed,
+      marginTop: 10,
+      textAlign: "right",
+      fontWeight: "700",
+    },
+    editActions: { flexDirection: "row", gap: 10, marginTop: 18 },
+    editBtn: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    editCancelBtn: { backgroundColor: colors.surfaceAlt },
+    editSaveBtn: { backgroundColor: colors.primary },
+    editCancelText: { color: colors.textMain, fontSize: 15, fontWeight: "800" },
+    editSaveText: { color: colors.primaryText, fontSize: 15, fontWeight: "800" },
     emptyBox: { alignItems: "center", paddingTop: 40, paddingHorizontal: 40 },
     emptyTitle: { fontSize: 17, fontWeight: "800", color: colors.textMain, marginTop: 12 },
     emptySubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 4, textAlign: "center" },

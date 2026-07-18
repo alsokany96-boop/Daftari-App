@@ -174,20 +174,159 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.4"
-  test_sequence: 8
+  version: "1.6"
+  test_sequence: 10
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Admin-editable subscription price"
-    - "Admin-editable free tier limit"
-    - "Dynamic reflection on subscription-lock screen"
+    - "Editable customer + supplier WhatsApp templates"
+    - "Templates propagate to add-transaction reminder message"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: |
+      Iteration 10 — Editable transaction message templates for both customers and suppliers.
+
+      Please retest end-to-end.
+
+      BACKEND
+        - `Settings` model gained 4 new fields:
+            - `customer_debt_template`
+            - `customer_payment_template`
+            - `supplier_debt_template`
+            - `supplier_payment_template`
+          Defaults exactly as the user requested; interpolation placeholders are
+          `{name}`, `{shop}`, `{amount}`, `{balance}`, `{currency}`.
+        - `SettingsUpdate` accepts all four.
+        - GET /api/settings now returns the 4 new fields (pydantic default fills missing keys for
+          existing owner settings docs).
+        - PUT /api/settings updates any subset of them and persists to Mongo.
+
+      FRONTEND
+        - `api.ts` AppSettings type extended with the 4 new fields.
+        - `whatsapp.ts` buildTransactionMessage now takes optional `partyType` +
+          `templates` and picks the right template by `${partyType}_${txType}`. Falls back to
+          `DEFAULT_TEMPLATES` if the server template is missing.
+        - `add-transaction.tsx` fetches settings, then loads the customer to know their party_type,
+          and passes both to buildTransactionMessage so the correct template is used.
+        - `settings.tsx` new sections: "قوالب رسائل الزبائن" and "قوالب رسائل الموردين" with 4
+          multi-line TextInputs (testIDs: `settings-customer-debt-template`,
+          `settings-customer-payment-template`, `settings-supplier-debt-template`,
+          `settings-supplier-payment-template`). Save button already saves everything at once.
+
+      TESTS
+      BACKEND
+        1. As testuser, GET /api/settings returns the 4 new fields with the default Arabic strings.
+        2. PUT /api/settings with only `supplier_debt_template` updates just that field; the other
+           three templates + reminder_template remain unchanged.
+        3. Employee token → PUT /api/settings returns 403 (still `CurrentOwner`).
+        4. Existing settings docs (which don't have the new fields yet) still return defaults on GET.
+
+      FRONTEND
+        1. Sign in as testuser. Navigate to Settings via the home screen.
+        2. Verify the 4 new template TextInputs are visible and prefilled with the current server
+           values (defaults if not yet edited).
+        3. Change `settings-supplier-debt-template` to a distinct custom string, tap `settings-save`,
+           see `settings-saved` success.
+        4. From home, open a supplier customer (create one if needed), tap "شراء بالآجل" — save a
+           small amount — inspect the `reminder-prompt-modal` preview text: it must contain the
+           custom supplier_debt template with values substituted.
+        5. Change `settings-supplier-payment-template` similarly, save, and verify the supplier
+           payment message uses the new template.
+        6. For a normal customer, verify that `customer_debt_template` and
+           `customer_payment_template` also drive the reminder preview (change them and reload).
+        7. Cleanup: restore the 4 templates to their default Arabic strings at the end of the run.
+
+      Files changed:
+        - /app/backend/server.py (Settings/SettingsUpdate now include 4 templates)
+        - /app/frontend/src/utils/api.ts (AppSettings extended)
+        - /app/frontend/src/utils/whatsapp.ts (party-aware buildTransactionMessage)
+        - /app/frontend/app/(app)/add-transaction.tsx (uses partyType + templates)
+        - /app/frontend/app/(app)/settings.tsx (4 new editable text areas)
+
+      Credentials: /app/memory/test_credentials.md.
+
+  - agent: "main"
+    message: |
+      Iteration 9 — Multiple UX & backend upgrades. Please retest end-to-end.
+
+      REMOVED
+        - Deleted `/app/frontend/src/utils/formula.ts` and all its usages. Amount input no longer
+          evaluates arithmetic. Plain digit-only input on add-transaction.
+
+      NEW BACKEND
+        - PUT /api/transactions/{transaction_id} (owner + super_admin only via `CurrentOwner`):
+          - Accepts `amount` (>0) and `notes`. Both optional; at least one required.
+          - Rejects amount <= 0 or non-numeric with 400.
+          - Employees hitting it → 403 (they are `CurrentUser`, not `CurrentOwner`).
+          - Missing tx → 404.
+        - Employee store lock:
+          - `resolve_store_id` now IGNORES any incoming store_id for employee callers and forces
+            the owner's default (first) store. So employees can never write to a store other than
+            the primary one, even if they craft a request themselves.
+          - GET /api/stores returns ONLY the default store for employees.
+
+      NEW FRONTEND
+        - add-transaction.tsx: full rewrite. Amount display is a large centered number driven by a
+          custom POS-style 3-column keypad (1-9, then `.` `0` backspace) rendered at the bottom of
+          the screen. Native keyboard NEVER appears for the amount. Clear button at the top-right of
+          the amount card. Image chooser now behind a modal with a single button.
+        - customer/[id].tsx: each transaction row now has an edit (pencil) and delete (trash) icon
+          for owners. Edit opens a modal (`edit-tx-modal`) with an amount TextInput (`edit-tx-amount`),
+          notes TextInput (`edit-tx-notes`), cancel and save buttons. Save calls
+          PUT /api/transactions/{id} and reloads the balance.
+        - home.tsx: store dropdown (`store-switcher`) is hidden for employees. Employees see a
+          read-only badge (`employee-store-badge`) with the store name.
+        - admin.tsx: new search bar (`admin-search-input`, `admin-search-clear`) that filters the
+          list by username, shop_name, or phone. Empty-state text switches to "لا توجد نتائج مطابقة"
+          when the query has no hits.
+
+      TESTS
+      BACKEND:
+        1. PUT /api/transactions/{id} as owner: amount+notes update returns updated Transaction.
+           Amount=0 → 400. Amount="abc" → 422 (pydantic). Missing tx → 404.
+        2. PUT /api/transactions/{id} as employee → 403.
+        3. Create an employee under testuser. Sign in as employee, create a customer WITH a
+           store_id belonging to a second store (create a second store for testuser first). Verify
+           the created customer's store_id is the owner's DEFAULT store, not the one the employee
+           passed. Same for POST /api/transactions.
+        4. As employee, GET /api/stores returns 1 store only (the owner's default).
+        5. Regression: iterations 6-8 still pass.
+
+      FRONTEND:
+        1. Sign in as testuser, open any customer → tap "أخذ / دَين" → verify the new keypad UI
+           renders (`tx-keypad`) with keys `keypad-0` through `keypad-9`, `keypad-.`, `keypad-back`.
+           Tap `1 2 . 5` → `tx-amount-display` shows "12.5". Tap `keypad-back` → shows "12.". Add
+           more digits → they append. `tx-amount-clear` resets the display. `tx-submit-button`
+           saves the transaction (verify via reload the tx list contains a 12.5 entry).
+        2. On the customer detail screen after saving, an owner sees `tx-edit-<id>` and
+           `tx-delete-<id>` icons on each transaction. Tap edit on an existing tx → modal opens
+           with the current amount prefilled. Change to a new number, tap `edit-tx-save`, and
+           verify the amount updates in the list and the balance recomputes.
+        3. Amount=0 in the edit modal → shows `edit-tx-error`.
+        4. Create an employee via the owner's staff screen (testuser can already create staff).
+           Sign in as the employee → verify home.tsx does NOT render `store-switcher`. Instead an
+           `employee-store-badge` is visible with the owner's default store name.
+        5. Sign in as admin/admin1234. In the dashboard type `testuser` in `admin-search-input` →
+           only matching cards remain. Type `999` (a phone fragment) → filters by phone. Type garbage
+           → empty state with "لا توجد نتائج مطابقة للبحث". `admin-search-clear` empties the query.
+        6. Cleanup: any employee test accounts created should be deleted at the end.
+
+      Files changed:
+        - /app/backend/server.py (TransactionUpdate model, PUT /transactions/{id}, employee store lock in resolve_store_id + list_stores)
+        - /app/frontend/src/utils/api.ts (updateTransaction)
+        - /app/frontend/src/utils/formula.ts (DELETED)
+        - /app/frontend/app/(app)/add-transaction.tsx (rewrite: POS keypad)
+        - /app/frontend/app/(app)/customer/[id].tsx (edit-tx modal + edit/delete icons)
+        - /app/frontend/app/(app)/home.tsx (hide store switcher for employees; employee-store-badge)
+        - /app/frontend/app/(app)/admin.tsx (admin-search-input, filteredUsers)
+
+      Credentials: /app/memory/test_credentials.md.
+
   - agent: "main"
     message: |
       Iteration 8 — Admin can edit subscription price & free-tier limit at runtime.

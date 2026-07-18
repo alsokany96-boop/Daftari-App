@@ -186,26 +186,41 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Store switcher */}
-      <TouchableOpacity
-        testID="store-switcher"
-        style={styles.storeSwitcher}
-        onPress={() => setShowStorePicker(true)}
-        activeOpacity={0.85}
-      >
-        <Ionicons
-          name={(activeStore?.icon as any) || "storefront"}
-          size={22}
-          color={colors.primary}
-        />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.storeLabel}>المحل الحالي</Text>
-          <Text style={styles.storeName} numberOfLines={1}>
-            {activeStore?.name || "..."}
+      {/* Store switcher — owners only. Employees are strictly locked to the
+          owner's default store and never see this control. */}
+      {!isEmployee && (
+        <TouchableOpacity
+          testID="store-switcher"
+          style={styles.storeSwitcher}
+          onPress={() => setShowStorePicker(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons
+            name={(activeStore?.icon as any) || "storefront"}
+            size={22}
+            color={colors.primary}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.storeLabel}>المحل الحالي</Text>
+            <Text style={styles.storeName} numberOfLines={1}>
+              {activeStore?.name || "..."}
+            </Text>
+          </View>
+          <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      )}
+      {isEmployee && activeStore && (
+        <View style={styles.storeBadge} testID="employee-store-badge">
+          <Ionicons
+            name={(activeStore?.icon as any) || "storefront"}
+            size={18}
+            color={colors.textMuted}
+          />
+          <Text style={styles.storeBadgeText} numberOfLines={1}>
+            {activeStore?.name}
           </Text>
         </View>
-        <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
-      </TouchableOpacity>
+      )}
 
       {/* Party type tabs */}
       <View style={styles.tabs}>
@@ -397,6 +412,26 @@ const makeStyles = (colors: ThemeColors) =>
     },
     storeLabel: { fontSize: 11, color: colors.textMuted, fontWeight: "600", textAlign: "right" },
     storeName: { fontSize: 16, color: colors.textMain, fontWeight: "800", textAlign: "right" },
+    storeBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: colors.surfaceAlt,
+      marginHorizontal: 16,
+      marginTop: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    storeBadgeText: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: colors.textMain,
+      textAlign: "right",
+      flex: 1,
+    },
     tabs: {
       flexDirection: "row",
       marginHorizontal: 16,

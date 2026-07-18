@@ -147,7 +147,7 @@ export default function SettingsScreen() {
         )}
 
         {/* Template */}
-        <Text style={styles.sectionLabel}>نص التذكير</Text>
+        <Text style={styles.sectionLabel}>نص التذكير الدوري</Text>
         <Text style={styles.rowHint}>
           المتغيرات المتاحة: {"{name}"} اسم الزبون، {"{shop}"} اسم المحل، {"{amount}"} المبلغ، {"{currency}"} العملة
         </Text>
@@ -156,6 +156,65 @@ export default function SettingsScreen() {
           style={[styles.input, { minHeight: 120 }]}
           value={settings.reminder_template}
           onChangeText={(t) => setSettings({ ...settings, reminder_template: t })}
+          multiline
+          textAlign="right"
+          textAlignVertical="top"
+        />
+
+        {/* Transaction templates */}
+        <View style={styles.divider} />
+        <Text style={styles.groupTitle}>قوالب رسائل الزبائن</Text>
+        <Text style={styles.rowHint}>
+          تُرسل مباشرةً بعد حفظ العملية. المتغيرات: {"{name}"}، {"{shop}"}، {"{amount}"}،{" "}
+          {"{balance}"}، {"{currency}"}
+        </Text>
+
+        <Text style={styles.sectionLabel}>قالب دَين / أخذ (زبون)</Text>
+        <TextInput
+          testID="settings-customer-debt-template"
+          style={[styles.input, { minHeight: 110 }]}
+          value={settings.customer_debt_template}
+          onChangeText={(t) => setSettings({ ...settings, customer_debt_template: t })}
+          multiline
+          textAlign="right"
+          textAlignVertical="top"
+        />
+
+        <Text style={styles.sectionLabel}>قالب سداد / دفع (زبون)</Text>
+        <TextInput
+          testID="settings-customer-payment-template"
+          style={[styles.input, { minHeight: 110 }]}
+          value={settings.customer_payment_template}
+          onChangeText={(t) => setSettings({ ...settings, customer_payment_template: t })}
+          multiline
+          textAlign="right"
+          textAlignVertical="top"
+        />
+
+        <View style={styles.divider} />
+        <Text style={styles.groupTitle}>قوالب رسائل الموردين</Text>
+        <Text style={styles.rowHint}>
+          تُرسل بعد تسجيل العملية مع المورد. المتغيرات: {"{name}"}، {"{shop}"}، {"{amount}"}،{" "}
+          {"{balance}"}، {"{currency}"}
+        </Text>
+
+        <Text style={styles.sectionLabel}>قالب شراء بالآجل (مورد)</Text>
+        <TextInput
+          testID="settings-supplier-debt-template"
+          style={[styles.input, { minHeight: 110 }]}
+          value={settings.supplier_debt_template}
+          onChangeText={(t) => setSettings({ ...settings, supplier_debt_template: t })}
+          multiline
+          textAlign="right"
+          textAlignVertical="top"
+        />
+
+        <Text style={styles.sectionLabel}>قالب دفعت له / سداد (مورد)</Text>
+        <TextInput
+          testID="settings-supplier-payment-template"
+          style={[styles.input, { minHeight: 110 }]}
+          value={settings.supplier_payment_template}
+          onChangeText={(t) => setSettings({ ...settings, supplier_payment_template: t })}
           multiline
           textAlign="right"
           textAlignVertical="top"
@@ -228,6 +287,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   toggleThumbOn: { alignSelf: "flex-end" },
   sectionLabel: { fontSize: 14, fontWeight: "800", color: colors.textMain, marginTop: 20, marginBottom: 8, textAlign: "right" },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginTop: 28,
+    marginBottom: 4,
+  },
+  groupTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: colors.primary,
+    marginTop: 20,
+    marginBottom: 4,
+    textAlign: "right",
+  },
   freqRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   freqChip: {
     paddingHorizontal: 16,

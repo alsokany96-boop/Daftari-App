@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 10 fully verified. Backend: 13/13 pytest tests PASS covering GET /api/settings returning correct Arabic defaults for the 4 new template fields (customer_debt_template, customer_payment_template, supplier_debt_template, supplier_payment_template), PUT /api/settings updating each template individually while preserving the other 3 + reminder_template (verified via GET), isolated PUT of supplier_debt_template only, employee GET allowed / employee PUT → 403 (CurrentOwner), and full restore-to-defaults cleanup. Frontend: signed in as testuser/test1234, opened Settings via open-settings-button on home. All 4 new textareas render with the exact defaults prefilled (settings-customer-debt-template, settings-customer-payment-template, settings-supplier-debt-template, settings-supplier-payment-template). Set all 4 to distinctive markers (CUSTOMER-DEBT-TEST, CUSTOMER-PAY-TEST, SUPPLIER-DEBT-TEST, SUPPLIER-PAY-TEST) each with {name}/{amount}/{currency}/{balance} placeholders and tapped settings-save → settings-saved shows 'تم حفظ الإعدادات'. Executed all 4 tx flows (customer+debt, customer+payment, supplier+debt, supplier+payment) on real records — reminder-prompt-modal preview correctly contains the marker AND all placeholders {name}, {amount}, {currency}, {balance} are substituted (no literal placeholder text present). Example previews: 'مرحباً TEST_UI_CUST_EDITED، CUSTOMER-DEBT-TEST مبلغ 12 دينار رصيد 133.5' and 'مرحباً V10_TEST_SUP، SUPPLIER-PAY-TEST دفعت 12 دينار رصيد 0'. Cleanup done: templates restored to server.py Settings defaults (verified via GET), V10_TEST_SUP supplier deleted, both amount=12 test transactions deleted from the existing customer.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "reminder-prompt-modal (add-transaction.tsx)",
+        "issues": [
+          "Modal title is hard-coded to 'إرسال تذكير للزبون؟' (Send reminder to customer) even when party_type=supplier. Preview content itself is correct and uses the supplier template, but the title copy is customer-centric. Consider 'إرسال تذكير للمورد؟' when partyType==='supplier' (or a neutral wording). Cosmetic only; not blocking."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "global (settings + add-transaction screens)",
+        "issue": "Console still emits 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents' — same as iteration 8. Non-blocking but should be migrated."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_daftari_v10.py",
+    "/app/test_reports/pytest/pytest_v10_results.xml"
+  ],
+  "action_items": [
+    "(Optional, minor UX) In /app/frontend/app/(app)/add-transaction.tsx line 423, make the modal title 'إرسال تذكير للزبون؟' party-aware — use 'المورد' when partyType==='supplier'.",
+    "(Optional, low priority) Migrate remaining shadow*/pointerEvents deprecations to boxShadow / style.pointerEvents."
+  ],
+  "critical_code_review_comments": [
+    "Backend Settings model in /app/backend/server.py lines 151-172 correctly declares all 4 new template fields with the Arabic defaults; SettingsUpdate mirrors them as Optional. get_settings_doc lazy-inserts defaults on first read so a brand-new owner sees the exact strings.",
+    "PUT /api/settings (line 1036-1043) uses SettingsUpdate.dict(exclude_unset=True) implicitly via `updates` — verified idempotent per-field: updating only supplier_debt_template preserves the other 3 templates + reminder_template.",
+    "Frontend /app/frontend/src/utils/whatsapp.ts buildTransactionMessage correctly derives the template key from `${partyType}_${txType}_template` and interpolates {name}/{shop}/{amount}/{balance}/{currency}. Fallback to DEFAULT_TEMPLATES when the server field is undefined is safe.",
+    "add-transaction.tsx passes partyType=(customer.party_type==='supplier'?'supplier':'customer') so the correct template is selected. Confirmed at runtime with the SUPPLIER-DEBT-TEST / SUPPLIER-PAY-TEST previews on a supplier record.",
+    "No literal {balance}/{amount}/{name} strings observed in any of the 4 reminder previews — interpolation is complete."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_daftari_v10.py"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13)",
+    "frontend": "100% for all 4 template flows in the review request"
+  },
+  "seed_data_creation": "Created supplier V10_TEST_SUP via UI (deleted at end). Employee account v10_emp_* created in pytest and deleted in TestZZZRestoreAndCleanup. Two amount=12 test transactions on the existing customer TEST_UI_CUST_EDITED also deleted at end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 10 introduced 4 editable transaction-message templates on /api/settings. Test file: /app/backend/tests/test_daftari_v10.py. Frontend testIDs on settings screen: settings-customer-debt-template, settings-customer-payment-template, settings-supplier-debt-template, settings-supplier-payment-template, plus existing settings-template (reminder). Reminder modal has testID reminder-prompt-modal and inner text carries the interpolated message. To force a supplier flow, use tab-supplier on home and add-customer-fab to create a supplier record. Backend defaults for the 4 templates are defined in Settings BaseModel in server.py lines 158-161 — those exact strings are what the restore step writes back.",
+  "rca_of_issue": "Not applicable — no bugs found. Feature works as designed."
+}

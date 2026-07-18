@@ -129,6 +129,11 @@ class TransactionCreate(BaseModel):
     receipt_image: Optional[str] = None
 
 
+class TransactionUpdate(BaseModel):
+    amount: Optional[float] = None
+    notes: Optional[str] = None
+
+
 class Transaction(BaseModel):
     id: str
     customer_id: str
@@ -148,6 +153,12 @@ class Settings(BaseModel):
     reminder_frequency: str = 'weekly'
     reminder_custom_days: int = 7
     reminder_template: str = 'مرحباً {name}، نود تذكيرك بأن حسابك الحالي في {shop} هو {amount} {currency}. نسعد بزيارتك.'
+    # Templates sent right after saving a transaction. {name} = party, {amount},
+    # {balance}, {shop}, {currency} are interpolated at send time.
+    customer_debt_template: str = 'مرحباً {name}، تم إضافة مبلغ {amount} {currency} إلى حسابك في {shop}. رصيدك الحالي: {balance} {currency}.'
+    customer_payment_template: str = 'مرحباً {name}، شكراً لك على السداد. تم استلام {amount} {currency} في {shop}. رصيدك الحالي: {balance} {currency}.'
+    supplier_debt_template: str = 'مرحباً {name}، تم تسجيل بضاعة بالآجل بقيمة {amount} {currency}. إجمالي حسابكم لدينا: {balance} {currency}. شكراً لكم.'
+    supplier_payment_template: str = 'مرحباً {name}، تم تسليمكم دفعة بقيمة {amount} {currency}. إجمالي حسابكم لدينا: {balance} {currency}. شكراً لكم.'
 
 
 class SettingsUpdate(BaseModel):
@@ -155,6 +166,10 @@ class SettingsUpdate(BaseModel):
     reminder_frequency: Optional[str] = None
     reminder_custom_days: Optional[int] = None
     reminder_template: Optional[str] = None
+    customer_debt_template: Optional[str] = None
+    customer_payment_template: Optional[str] = None
+    supplier_debt_template: Optional[str] = None
+    supplier_payment_template: Optional[str] = None
 
 
 class StaffCreate(BaseModel):
@@ -459,6 +474,12 @@ async def ensure_default_store(owner_id: str) -> dict:
 
 async def resolve_store_id(user: dict, provided_store_id: Optional[str]) -> str:
     owner = root_owner_id(user)
+    # Employees are strictly pinned to the owner's default (first) store. Any
+    # store_id they pass in the request body/query is ignored so they can never
+    # peek at or write into another store.
+    if user.get('role') == 'employee':
+        default = await ensure_default_store(owner)
+        return default['id']
     if provided_store_id:
         store = await db.stores.find_one({'id': provided_store_id, 'owner_id': owner}, {'_id': 0})
         if not store:
@@ -749,7 +770,11 @@ async def admin_list_reset_codes(current_user: CurrentSuperAdmin):
 @api_router.get('/stores', response_model=List[Store])
 async def list_stores(current_user: CurrentUser):
     owner = root_owner_id(current_user)
-    await ensure_default_store(owner)
+    default = await ensure_default_store(owner)
+    # Employees are locked to the owner's default store — they cannot see or
+    # switch to any other store.
+    if current_user.get('role') == 'employee':
+        return [Store(**default)]
     cursor = db.stores.find({'owner_id': owner}, {'_id': 0}).sort('created_at', 1)
     return [Store(**s) async for s in cursor]
 
@@ -957,6 +982,38 @@ async def delete_transaction(transaction_id: str, current_user: CurrentOwner):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail='العملية غير موجودة')
     return {'ok': True}
+
+
+@api_router.put('/transactions/{transaction_id}', response_model=Transaction)
+async def update_transaction(
+    transaction_id: str,
+    payload: TransactionUpdate,
+    current_user: CurrentOwner,
+):
+    """Owner/super_admin can edit the amount and note of an existing
+    transaction. Type and customer stay immutable so the audit trail is
+    preserved."""
+    scope = root_owner_id(current_user)
+    tx = await db.transactions.find_one({'id': transaction_id, 'owner_id': scope}, {'_id': 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail='العملية غير موجودة')
+    updates: dict = {}
+    if payload.amount is not None:
+        try:
+            amt = float(payload.amount)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail='المبلغ غير صالح')
+        if amt <= 0:
+            raise HTTPException(status_code=400, detail='المبلغ يجب أن يكون أكبر من صفر')
+        updates['amount'] = amt
+    if payload.notes is not None:
+        cleaned = payload.notes.strip()
+        updates['notes'] = cleaned or None
+    if not updates:
+        raise HTTPException(status_code=400, detail='لا توجد تغييرات')
+    await db.transactions.update_one({'id': transaction_id, 'owner_id': scope}, {'$set': updates})
+    tx = await db.transactions.find_one({'id': transaction_id, 'owner_id': scope}, {'_id': 0})
+    return to_transaction(tx)
 
 
 # ---------- SETTINGS ----------

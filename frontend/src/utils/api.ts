@@ -88,6 +88,10 @@ export type AppSettings = {
   reminder_frequency: "daily" | "weekly" | "monthly" | "custom";
   reminder_custom_days: number;
   reminder_template: string;
+  customer_debt_template: string;
+  customer_payment_template: string;
+  supplier_debt_template: string;
+  supplier_payment_template: string;
 };
 
 export type PublicConfig = {
@@ -200,6 +204,8 @@ export const api = {
   }) => request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(payload) }),
   deleteTransaction: (id: string) =>
     request<{ ok: boolean }>(`/transactions/${id}`, { method: "DELETE" }),
+  updateTransaction: (id: string, payload: { amount?: number; notes?: string }) =>
+    request<Transaction>(`/transactions/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
 
   // Settings
   getSettings: () => request<AppSettings>("/settings"),

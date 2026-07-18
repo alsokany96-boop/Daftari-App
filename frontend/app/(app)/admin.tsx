@@ -47,6 +47,21 @@ export default function AdminDashboardScreen() {
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
 
+  // Admin search: matches shop_name, username, or phone (case-insensitive).
+  const [search, setSearch] = useState("");
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) => {
+      const fields = [
+        u.username || "",
+        u.shop_name || "",
+        u.phone || "",
+      ].map((s) => s.toLowerCase());
+      return fields.some((f) => f.includes(q));
+    });
+  }, [users, search]);
+
   const load = useCallback(async () => {
     try {
       setError(null);
@@ -357,13 +372,36 @@ export default function AdminDashboardScreen() {
 
       {error && <Text style={styles.error}>{error}</Text>}
 
+      {/* Search bar */}
+      <View style={styles.searchWrap}>
+        <Ionicons name="search" size={20} color={colors.textMuted} />
+        <TextInput
+          testID="admin-search-input"
+          style={styles.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="ابحث بالاسم أو المتجر أو الهاتف..."
+          placeholderTextColor={colors.textMuted}
+          textAlign="right"
+        />
+        {search.length > 0 && (
+          <TouchableOpacity
+            testID="admin-search-clear"
+            onPress={() => setSearch("")}
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
       {loading ? (
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={colors.debtRed} />
         </View>
       ) : (
         <FlatList
-          data={users}
+          data={filteredUsers}
           keyExtractor={(item) => item.id}
           renderItem={renderUser}
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
@@ -380,7 +418,11 @@ export default function AdminDashboardScreen() {
           ListEmptyComponent={
             <View style={styles.emptyBox}>
               <Ionicons name="people-outline" size={56} color={colors.textMuted} />
-              <Text style={styles.emptyTitle}>لا يوجد مستخدمون بعد</Text>
+              <Text style={styles.emptyTitle} testID="admin-empty-title">
+                {search.trim()
+                  ? "لا توجد نتائج مطابقة للبحث"
+                  : "لا يوجد مستخدمون بعد"}
+              </Text>
             </View>
           }
         />
@@ -490,6 +532,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   statLabel: { fontSize: 12, color: colors.textMuted, fontWeight: "600", textAlign: "center" },
   statValue: { fontSize: 22, fontWeight: "900", color: colors.textMain, marginTop: 4, textAlign: "center" },
   error: { color: colors.debtRed, marginHorizontal: 16, marginTop: 8, fontWeight: "600", textAlign: "right" },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.textMain,
+  },
   success: { color: colors.paymentGreen, marginTop: 8, fontWeight: "600", textAlign: "right" },
   centerBox: { flex: 1, justifyContent: "center", alignItems: "center" },
   userCard: {
