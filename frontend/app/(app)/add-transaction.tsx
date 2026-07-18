@@ -48,6 +48,7 @@ export default function AddTransactionScreen() {
   const [reminderData, setReminderData] = useState<{
     phone: string;
     message: string;
+    isSupplier: boolean;
   } | null>(null);
 
   const accent = isDebt ? colors.debtRed : colors.paymentGreen;
@@ -176,7 +177,11 @@ export default function AddTransactionScreen() {
           supplier_payment_template: templates.supplier_payment_template,
         },
       });
-      setReminderData({ phone: customer.phone, message });
+      setReminderData({
+        phone: customer.phone,
+        message,
+        isSupplier: customer.party_type === "supplier",
+      });
       setShowReminder(true);
     } catch (e: any) {
       setError(e?.message || "فشل الحفظ");
@@ -420,9 +425,13 @@ export default function AddTransactionScreen() {
             <View style={styles.reminderIconBox}>
               <Ionicons name="logo-whatsapp" size={40} color={colors.white} />
             </View>
-            <Text style={styles.modalTitle}>إرسال تذكير للزبون؟</Text>
+            <Text style={styles.modalTitle}>
+              {reminderData?.isSupplier ? "إرسال تذكير للمورد؟" : "إرسال تذكير للزبون؟"}
+            </Text>
             <Text style={styles.modalSubtitle}>
-              تم حفظ العملية. هل تريد إعلام الزبون عبر الواتساب بالتحديث؟
+              {reminderData?.isSupplier
+                ? "تم حفظ العملية. هل تريد إعلام المورد عبر الواتساب بالتحديث؟"
+                : "تم حفظ العملية. هل تريد إعلام الزبون عبر الواتساب بالتحديث؟"}
             </Text>
             {reminderData && (
               <View style={styles.previewBox}>
