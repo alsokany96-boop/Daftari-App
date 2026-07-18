@@ -232,6 +232,17 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ days }),
     }),
+  adminGetConfig: () => request<PublicConfig>("/admin/config"),
+  adminUpdateConfig: (payload: {
+    subscription_price?: number;
+    free_tier_limit?: number;
+    admin_phone?: string;
+    admin_whatsapp?: string;
+  }) =>
+    request<PublicConfig>("/admin/config", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
 };
 
 export function whatsappUrl(phone: string, message: string): string {

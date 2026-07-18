@@ -227,9 +227,45 @@ class PublicConfig(BaseModel):
     free_tier_limit: int
 
 
+class AdminConfigUpdate(BaseModel):
+    subscription_price: Optional[float] = None
+    free_tier_limit: Optional[int] = None
+    admin_phone: Optional[str] = None
+    admin_whatsapp: Optional[str] = None
+
+
 # =============== HELPERS =================
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
+
+
+APP_CONFIG_ID = 'global'
+
+
+async def get_app_config() -> dict:
+    """Return the app-wide, admin-editable config document. Creates it with
+    defaults from the environment on first access."""
+    doc = await db.app_config.find_one({'id': APP_CONFIG_ID}, {'_id': 0})
+    if doc:
+        return doc
+    doc = {
+        'id': APP_CONFIG_ID,
+        'subscription_price': SUBSCRIPTION_PRICE,
+        'free_tier_limit': FREE_TIER_LIMIT,
+        'admin_phone': ADMIN_PHONE,
+        'admin_whatsapp': ADMIN_WHATSAPP,
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }
+    await db.app_config.insert_one(doc.copy())
+    return doc
+
+
+async def get_effective_free_tier_limit() -> int:
+    cfg = await get_app_config()
+    try:
+        return max(1, int(cfg.get('free_tier_limit', FREE_TIER_LIMIT)))
+    except (TypeError, ValueError):
+        return FREE_TIER_LIMIT
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -292,12 +328,14 @@ async def compute_effective_status(user: dict) -> dict:
     """
     role = user.get('role', 'owner')
     physical_active = bool(user.get('is_active', True))
+    limit = await get_effective_free_tier_limit()
     if role == 'super_admin':
         return {
             'effective_active': True,
             'is_locked': False,
             'customer_count': 0,
             'subscription_expires_at': None,
+            'free_tier_limit': limit,
         }
 
     owner = user
@@ -309,7 +347,7 @@ async def compute_effective_status(user: dict) -> dict:
     count = await get_owner_max_customer_count(owner['id'])
     exp = owner.get('subscription_expires_at')
     sub_active = is_subscription_active(exp)
-    is_locked = count >= FREE_TIER_LIMIT and not sub_active
+    is_locked = count >= limit and not sub_active
 
     effective = physical_active and not is_locked
     if role == 'employee':
@@ -320,6 +358,7 @@ async def compute_effective_status(user: dict) -> dict:
         'is_locked': is_locked,
         'customer_count': count,
         'subscription_expires_at': exp,
+        'free_tier_limit': limit,
     }
 
 
@@ -338,7 +377,7 @@ async def to_user_public_effective(u: dict) -> UserPublic:
         subscription_expires_at=meta['subscription_expires_at'],
         customer_count=int(meta['customer_count']),
         is_locked=bool(meta['is_locked']),
-        free_tier_limit=FREE_TIER_LIMIT,
+        free_tier_limit=int(meta['free_tier_limit']),
     )
 
 
@@ -485,11 +524,12 @@ async def root():
 
 @api_router.get('/config', response_model=PublicConfig)
 async def public_config():
+    cfg = await get_app_config()
     return PublicConfig(
-        admin_phone=ADMIN_PHONE,
-        admin_whatsapp=ADMIN_WHATSAPP,
-        subscription_price=SUBSCRIPTION_PRICE,
-        free_tier_limit=FREE_TIER_LIMIT,
+        admin_phone=cfg.get('admin_phone', ADMIN_PHONE),
+        admin_whatsapp=cfg.get('admin_whatsapp', ADMIN_WHATSAPP),
+        subscription_price=float(cfg.get('subscription_price', SUBSCRIPTION_PRICE)),
+        free_tier_limit=int(cfg.get('free_tier_limit', FREE_TIER_LIMIT)),
     )
 
 
@@ -1014,6 +1054,58 @@ async def delete_staff(staff_id: str, current_user: CurrentOwner):
 
 
 # ---------- ADMIN ----------
+@api_router.get('/admin/config', response_model=PublicConfig)
+async def admin_get_config(current_user: CurrentSuperAdmin):
+    cfg = await get_app_config()
+    return PublicConfig(
+        admin_phone=cfg.get('admin_phone', ADMIN_PHONE),
+        admin_whatsapp=cfg.get('admin_whatsapp', ADMIN_WHATSAPP),
+        subscription_price=float(cfg.get('subscription_price', SUBSCRIPTION_PRICE)),
+        free_tier_limit=int(cfg.get('free_tier_limit', FREE_TIER_LIMIT)),
+    )
+
+
+@api_router.put('/admin/config', response_model=PublicConfig)
+async def admin_update_config(payload: AdminConfigUpdate, current_user: CurrentSuperAdmin):
+    """Update the global app config. Any field left None is not touched."""
+    updates: dict = {}
+    if payload.subscription_price is not None:
+        try:
+            price = float(payload.subscription_price)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail='قيمة الاشتراك غير صالحة')
+        if price < 0:
+            raise HTTPException(status_code=400, detail='قيمة الاشتراك يجب ألا تكون سالبة')
+        updates['subscription_price'] = price
+    if payload.free_tier_limit is not None:
+        try:
+            limit = int(payload.free_tier_limit)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail='الحد المجاني غير صالح')
+        if limit < 1:
+            raise HTTPException(status_code=400, detail='الحد المجاني يجب أن يكون 1 على الأقل')
+        if limit > 100000:
+            raise HTTPException(status_code=400, detail='الحد المجاني كبير جداً')
+        updates['free_tier_limit'] = limit
+    if payload.admin_phone is not None:
+        updates['admin_phone'] = payload.admin_phone.strip()
+    if payload.admin_whatsapp is not None:
+        updates['admin_whatsapp'] = payload.admin_whatsapp.strip()
+    if not updates:
+        raise HTTPException(status_code=400, detail='لا توجد تغييرات')
+    updates['updated_at'] = datetime.now(timezone.utc).isoformat()
+    # Ensure doc exists (get_app_config will insert defaults if missing).
+    await get_app_config()
+    await db.app_config.update_one({'id': APP_CONFIG_ID}, {'$set': updates})
+    cfg = await get_app_config()
+    return PublicConfig(
+        admin_phone=cfg.get('admin_phone', ADMIN_PHONE),
+        admin_whatsapp=cfg.get('admin_whatsapp', ADMIN_WHATSAPP),
+        subscription_price=float(cfg.get('subscription_price', SUBSCRIPTION_PRICE)),
+        free_tier_limit=int(cfg.get('free_tier_limit', FREE_TIER_LIMIT)),
+    )
+
+
 @api_router.get('/admin/users', response_model=List[UserPublic])
 async def admin_list_users(current_user: CurrentSuperAdmin):
     query = {

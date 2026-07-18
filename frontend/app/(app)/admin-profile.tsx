@@ -13,12 +13,12 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/utils/api";
 import { useSession } from "@/src/ctx/SessionProvider";
-import { useColors, ThemeColors } from "@/src/theme";
+import { useColors, ThemeColors, CURRENCY } from "@/src/theme";
 
 export default function AdminProfileScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { user, refreshUser } = useSession();
+  const { user, config, refreshUser, refreshConfig } = useSession();
 
   // Admin-only guard. Any non-admin that lands here is bounced back home.
   useEffect(() => {
@@ -35,12 +35,31 @@ export default function AdminProfileScreen() {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
 
+  // App-settings fields
+  const [price, setPrice] = useState(
+    config?.subscription_price != null ? String(config.subscription_price) : ""
+  );
+  const [limit, setLimit] = useState(
+    config?.free_tier_limit != null ? String(config.free_tier_limit) : ""
+  );
+
+  useEffect(() => {
+    // Keep the form in sync when the config loads/refreshes.
+    if (config) {
+      setPrice(String(config.subscription_price ?? ""));
+      setLimit(String(config.free_tier_limit ?? ""));
+    }
+  }, [config]);
+
   const [savingInfo, setSavingInfo] = useState(false);
   const [savingPw, setSavingPw] = useState(false);
+  const [savingCfg, setSavingCfg] = useState(false);
   const [infoError, setInfoError] = useState<string | null>(null);
   const [infoSuccess, setInfoSuccess] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwSuccess, setPwSuccess] = useState<string | null>(null);
+  const [cfgError, setCfgError] = useState<string | null>(null);
+  const [cfgSuccess, setCfgSuccess] = useState<string | null>(null);
 
   const saveInfo = async () => {
     setInfoError(null);
@@ -87,6 +106,37 @@ export default function AdminProfileScreen() {
       setPwError(e?.message || "فشل التحديث");
     } finally {
       setSavingPw(false);
+    }
+  };
+
+  const saveConfig = async () => {
+    setCfgError(null);
+    setCfgSuccess(null);
+    const trimmedPrice = price.replace(/[^0-9.]/g, "").trim();
+    const trimmedLimit = limit.replace(/[^0-9]/g, "").trim();
+    const priceNum = parseFloat(trimmedPrice);
+    const limitNum = parseInt(trimmedLimit, 10);
+    if (!isFinite(priceNum) || priceNum < 0) {
+      setCfgError("قيمة الاشتراك غير صالحة");
+      return;
+    }
+    if (!isFinite(limitNum) || limitNum < 1) {
+      setCfgError("الحد المجاني يجب أن يكون 1 على الأقل");
+      return;
+    }
+    setSavingCfg(true);
+    try {
+      await api.adminUpdateConfig({
+        subscription_price: priceNum,
+        free_tier_limit: limitNum,
+      });
+      await refreshConfig();
+      await refreshUser();
+      setCfgSuccess("تم تحديث الإعدادات بنجاح");
+    } catch (e: any) {
+      setCfgError(e?.message || "فشل التحديث");
+    } finally {
+      setSavingCfg(false);
     }
   };
 
@@ -250,6 +300,72 @@ export default function AdminProfileScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* App settings card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="settings" size={22} color={colors.paymentGreen} />
+            <Text style={styles.cardTitle}>إعدادات التطبيق</Text>
+          </View>
+          <Text style={styles.hint}>
+            هذه الإعدادات عامة لجميع المستخدمين. عند التحديث سيظهر السعر والحد الجديد
+            مباشرة على شاشة «الاشتراك مطلوب».
+          </Text>
+
+          <Text style={styles.label}>قيمة الاشتراك الشهري ({CURRENCY}) *</Text>
+          <TextInput
+            testID="admin-cfg-price"
+            style={styles.input}
+            value={price}
+            onChangeText={setPrice}
+            placeholder="مثال: 20"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="decimal-pad"
+            textAlign="right"
+          />
+
+          <Text style={styles.label}>الحد الأقصى المجاني (عدد الزبائن لكل محل) *</Text>
+          <TextInput
+            testID="admin-cfg-limit"
+            style={styles.input}
+            value={limit}
+            onChangeText={setLimit}
+            placeholder="مثال: 10"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="number-pad"
+            textAlign="right"
+          />
+          <Text style={styles.hint}>
+            بعد تجاوز هذا الرقم من الزبائن في أي محل واحد سيظهر قفل الاشتراك للمستخدم.
+          </Text>
+
+          {cfgError && (
+            <Text style={styles.error} testID="admin-cfg-error">
+              {cfgError}
+            </Text>
+          )}
+          {cfgSuccess && (
+            <Text style={styles.success} testID="admin-cfg-success">
+              {cfgSuccess}
+            </Text>
+          )}
+
+          <TouchableOpacity
+            testID="admin-cfg-save"
+            style={[styles.submitBtn, styles.cfgBtn, savingCfg && { opacity: 0.7 }]}
+            onPress={saveConfig}
+            disabled={savingCfg}
+            activeOpacity={0.85}
+          >
+            {savingCfg ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <Text style={[styles.submitText, { color: colors.white }]}>
+                حفظ الإعدادات
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </KeyboardAwareScrollView>
     </SafeAreaView>
   );
@@ -335,5 +451,6 @@ const makeStyles = (colors: ThemeColors) =>
       marginTop: 18,
     },
     pwBtn: { backgroundColor: colors.debtRed },
+    cfgBtn: { backgroundColor: colors.paymentGreen },
     submitText: { color: colors.primaryText, fontSize: 15, fontWeight: "800" },
   });

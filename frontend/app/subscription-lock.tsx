@@ -12,7 +12,7 @@ import ConfirmDialog from "@/src/components/ConfirmDialog";
 export default function SubscriptionLockScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { user, config, signOut, refreshUser } = useSession();
+  const { user, config, signOut, refreshUser, refreshConfig } = useSession();
   const [showSignOut, setShowSignOut] = useState(false);
 
   // Once the user becomes active again (admin activated / extended subscription
@@ -120,7 +120,10 @@ export default function SubscriptionLockScreen() {
         <TouchableOpacity
           testID="refresh-status-button"
           style={styles.refreshBtn}
-          onPress={refreshUser}
+          onPress={async () => {
+            await refreshConfig();
+            await refreshUser();
+          }}
           activeOpacity={0.7}
         >
           <Ionicons name="refresh" size={18} color={colors.debtRed} />

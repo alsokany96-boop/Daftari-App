@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 8 fully verified. Backend: 18/18 pytest tests PASS (GET /api/config default 20/10, admin GET/PUT /api/admin/config with RBAC + validation, dynamic lock behavior via free_tier_limit flip: v8_lock_test fresh owner + 5 seeded customers → limit=5 locks (customer_count=5, is_locked=true, is_active=false, POST /api/customers → 403), limit=10 unlocks, limit=3 re-locks). Frontend: signed in as admin, opened admin-profile via admin-profile-open, App Settings card 'إعدادات التطبيق' visible with admin-cfg-price prefilled '20' and admin-cfg-limit prefilled '10'. Setting 25/15 + save → admin-cfg-success 'تم تحديث الإعدادات بنجاح'. Setting limit=0 + save → admin-cfg-error 'الحد المجاني يجب أن يكون 1 على الأقل'. Seeded 15 extra customers for testuser then signed in as testuser — subscription-lock rendered with subtitle 'وصلت إلى 16 زبون ... (15 زبون لكل محل)' and subscription-price=25. Reverted config to 20/10 via admin PUT and tapped refresh-status-button on the still-open lock screen → subtitle updated to '(10 زبون لكل محل)' and price switched to 20 while user remained on lock screen (16 >= 10). Cleaned up: 15 V8_LOCK_ customers deleted, config back to 20/10, all v8_* users removed. Defaults & user counts confirmed post-run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "subscription-lock",
+        "issues": [
+          "subscription-status-card only renders when user.subscription_expires_at is set (per code `{expDate && ...}`). For a testuser that was never activated (like this run), the card doesn't render at all — so the review-request assertion 'subscription-status-card numbers must reflect the new limit' is not directly testable in this state. The limit IS correctly reflected in the main subtitle above the card. Not a bug, but worth confirming with product whether the status card should also show for never-activated users."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "admin-profile / subscription-lock (global)",
+        "issue": "Console emits repeated warnings: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Not blocking but should be migrated. Reference: RN 0.74+ style contract change."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_daftari_v8.py",
+    "/app/test_reports/pytest/pytest_v8_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Confirm with product: should subscription-status-card render even when the owner has never been activated? Currently it hides because expDate is null.",
+    "(Optional, low priority) Migrate remaining `shadow*` style props to `boxShadow` and `props.pointerEvents` to `style.pointerEvents` to silence RN deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "get_app_config() correctly lazy-inserts the default doc when app_config collection is empty; verified by wiping the collection and hitting GET /api/config which returned 20/10.",
+    "PUT /api/admin/config is idempotent per-field: passing only subscription_price preserves free_tier_limit and vice-versa (verified in tests).",
+    "Validation order: negative price returns 400 with 'سالبة'; limit=0 returns 400 with 'يجب أن يكون 1 على الأقل' (Arabic detail as expected).",
+    "compute_effective_status uses get_effective_free_tier_limit(), so /auth/me reflects the LIVE app_config value — no user token invalidation needed. This is what makes dynamic lock work.",
+    "Frontend saveConfig sanitizes input with `replace(/[^0-9.]/g, '')` so a leading '-' is stripped before parseFloat — meaning entering '-5' produces price=5 (accepted). If admin truly wants a negative-input error message, sanitization should preserve the sign or backend-error should be surfaced. Not tested end-to-end because backend also rejects (defence-in-depth is fine); the review request said 'or limit=0' so we exercised the limit=0 branch which correctly shows admin-cfg-error.",
+    "subscription-lock refresh button correctly awaits refreshConfig() then refreshUser(), so the price + limit copy update live without navigating away — verified visually."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_daftari_v8.py"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18)",
+    "frontend": "100% for the flows in the review request"
+  },
+  "seed_data_creation": "Seeded 15 V8_LOCK_* customers for testuser to force the lock screen; all deleted after test. v8_lock_test_* transient users created + cleaned inside pytest TestZZZRestore.test_cleanup_v8_users.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend defaults are SUBSCRIPTION_PRICE=20, FREE_TIER_LIMIT=10 (see server.py). The app_config Mongo doc has id='global'. TestIDs for admin config UI: admin-cfg-price, admin-cfg-limit, admin-cfg-save, admin-cfg-success, admin-cfg-error, and the entry point is header button admin-profile-open on the admin dashboard. Subscription-lock exposes subscription-lock-screen, subscription-price, subscription-status-card (only when expDate is set), refresh-status-button. To force a lock on testuser: insert customers via pymongo with party_type='customer' matching store_id of testuser's default store (currently 96d3f138-00e0-4996-bcf0-7d76921cb4c9, owner 9ccc0f85-39aa-4c5f-ac2d-491bd559ed1e).",
+  "rca_of_issue": "Not applicable — no bugs found. Feature works as designed."
+}

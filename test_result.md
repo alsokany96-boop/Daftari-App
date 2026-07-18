@@ -174,20 +174,83 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.3"
-  test_sequence: 7
+  version: "1.4"
+  test_sequence: 8
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Sign-out from subscription-lock screen"
-    - "Admin profile self-service endpoint PUT /api/auth/profile"
-    - "Admin profile UI screen (name/phone/password)"
+    - "Admin-editable subscription price"
+    - "Admin-editable free tier limit"
+    - "Dynamic reflection on subscription-lock screen"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: |
+      Iteration 8 — Admin can edit subscription price & free-tier limit at runtime.
+
+      BACKEND
+        - New collection `app_config` with a single doc keyed by id='global' storing subscription_price,
+          free_tier_limit, admin_phone, admin_whatsapp. Auto-seeded from env on first read.
+        - Helper `get_effective_free_tier_limit()` — used by `compute_effective_status` instead of the
+          module constant. Lock-state now reacts to admin edits immediately.
+        - `GET /api/config` now reads from the DB doc (falls back to env if the doc has holes).
+        - New `GET /api/admin/config` (super_admin only) — same shape.
+        - New `PUT /api/admin/config` (super_admin only) — updates subscription_price and/or
+          free_tier_limit. Validates: price >= 0, limit 1..100000. Returns the updated PublicConfig.
+
+      FRONTEND
+        - `api.ts`: `adminGetConfig`, `adminUpdateConfig`.
+        - SessionProvider: exposes `refreshConfig()` so screens can pull fresh config after an update.
+        - `admin-profile.tsx`: new third card "إعدادات التطبيق" with two fields (price, limit) and a
+          save button. On success it calls `refreshConfig()` and `refreshUser()` so `user.free_tier_limit`
+          and `config.subscription_price` propagate app-wide.
+        - `subscription-lock.tsx`: "تحقق من حالة التفعيل" button now also refreshes config, so the price
+          and limit copy update the moment the admin changes them.
+        - The lock-screen subtitle already interpolates `user.free_tier_limit` and `config.subscription_price`
+          dynamically, so no template changes were needed.
+
+      Please test the following END-TO-END.
+
+      BACKEND
+        1. GET /api/config as unauthenticated → returns 200 with default 20 / 10.
+        2. GET /api/admin/config as testuser (owner) → 403.
+        3. PUT /api/admin/config as admin, body {"subscription_price": 25, "free_tier_limit": 15} →
+           200, new values. GET /api/config → same values.
+        4. Validation: {"subscription_price": -1} → 400 with detail "قيمة الاشتراك يجب ألا تكون سالبة".
+           {"free_tier_limit": 0} → 400.
+           {"free_tier_limit": "abc"} → 400 or 422 (pydantic coercion).
+        5. Free-tier lock adjusts on the fly:
+           - Register `v8_lock_test`, set free_tier_limit=5 via admin config, insert 5 customers →
+             /auth/me returns is_locked=true, customer_count=5, free_tier_limit=5.
+           - Set free_tier_limit=10 → /auth/me returns is_locked=false, free_tier_limit=10.
+        6. Restore price=20 and limit=10 at the end so future tests are unaffected.
+
+      FRONTEND
+        1. Sign in as admin/admin1234. Tap the admin-profile-open button.
+        2. Verify the new App Settings card renders with the current values (20 and 10) prefilled.
+        3. Change price to "25" and limit to "15" and tap `admin-cfg-save`. Expect
+           `admin-cfg-success`. Refresh /auth/me + config are triggered automatically.
+        4. Sign out of admin, sign in as testuser (test1234). If not currently locked, add customers
+           via a seeded API call until count=15 (new limit) to hit the lock screen. Verify the copy
+           on the lock screen shows the NEW price (25 دينار) and NEW limit (15 زبون) in the subtitle.
+        5. As admin, change price back to 20 and limit back to 10. Re-open the lock screen for
+           testuser and tap "تحقق من حالة التفعيل" → the visible price + limit copy updates.
+        6. Validation UI: entering "-5" for price or "0" for limit shows an inline error (message
+           in `admin-cfg-error`).
+
+      Files changed:
+        - /app/backend/server.py (`app_config` collection, /admin/config endpoints, dynamic limit)
+        - /app/frontend/src/utils/api.ts (`adminGetConfig`, `adminUpdateConfig`)
+        - /app/frontend/src/ctx/SessionProvider.tsx (`refreshConfig`)
+        - /app/frontend/app/(app)/admin-profile.tsx (new App Settings card)
+        - /app/frontend/app/subscription-lock.tsx (also refresh config on tap)
+
+      Credentials: /app/memory/test_credentials.md.
+
   - agent: "main"
     message: |
       Iteration 7 — Sign-out escape hatch + Admin Profile self-service.

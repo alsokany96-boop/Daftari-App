@@ -17,6 +17,7 @@ type SessionContextValue = {
   signIn: (token: string, user: UserPublic) => Promise<void>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  refreshConfig: () => Promise<void>;
   refreshStores: () => Promise<void>;
   setActiveStoreId: (id: string) => Promise<void>;
   setPartyType: (t: PartyType) => void;
@@ -38,6 +39,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const fresh = await api.me();
       setUserState(fresh);
       await storage.setItem(USER_KEY, JSON.stringify(fresh));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const refreshConfig = useCallback(async () => {
+    try {
+      const cfg = await api.config();
+      setConfig(cfg);
     } catch {
       /* ignore */
     }
@@ -144,6 +154,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         signIn,
         signOut,
         refreshUser,
+        refreshConfig,
         refreshStores,
         setActiveStoreId,
         setPartyType,
