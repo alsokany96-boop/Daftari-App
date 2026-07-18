@@ -174,20 +174,71 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 5
+  version: "1.2"
+  test_sequence: 6
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Manual OTP password reset endpoints"
-    - "Admin dashboard shows pending manual OTP reset codes with WhatsApp share"
-    - "Customer details & edit screens tolerant of legacy records"
+    - "Monthly subscription with 30-day expiry"
+    - "Per-store 10-customer free-tier lock"
+    - "Admin activate/extend/deactivate subscription endpoints"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: |
+      Iteration 6 — Subscription overhaul. Please retest the following END-TO-END.
+
+      BACKEND
+        - POST /api/auth/login (testuser/test1234) must now return the extra fields:
+          `subscription_expires_at`, `customer_count`, `is_locked`, `free_tier_limit=10`.
+        - POST /api/auth/register (new owner): must return is_active=true, subscription_expires_at=null,
+          customer_count=0 REGARDLESS of how many owners already exist (the global 11th-user gate is gone).
+        - Free-tier lock behavior (fresh owner):
+          - Create 9 customers in store A → GET /api/auth/me returns is_active=true, is_locked=false, customer_count=9.
+          - Create 10th customer → GET /api/auth/me returns is_active=false, is_locked=true, customer_count=10.
+          - Any protected write (POST /api/customers, POST /api/transactions, etc.) must 403 with detail
+            "الاشتراك غير مفعّل" until subscription is activated.
+        - Multi-store: locked count must be the MAX across an owner's stores (per-store threshold).
+          - Store B has 5 customers while store A has 10 → still locked because at least one store hit the limit.
+        - Only party_type='customer' counts. Adding 10 suppliers does NOT trigger the lock.
+        - PUT /api/admin/users/{owner_id}/activate (admin auth) sets subscription_expires_at ~= now+30d
+          and is_active=true. Next /auth/me for the owner returns is_active=true with the new expiry.
+        - PUT /api/admin/users/{owner_id}/extend {days:30} extends by 30 days on top of current expiry
+          (or from now if expired). Owner without any prior subscription should also work (base=now).
+        - PUT /api/admin/users/{owner_id}/deactivate clears subscription_expires_at and sets is_active=false.
+        - Simulated expiry: manually update subscription_expires_at to a past ISO in Mongo, then
+          /auth/me for that owner returns is_active=false and is_locked=true when count>=10.
+        - GET /api/admin/users list must include the new fields for each owner.
+
+      FRONTEND
+        - Sign in as testuser (test1234); customer_count=1 → home loads normally.
+        - Create 9 additional customers via UI (add-customer.tsx). On the 10th create, add-customer calls
+          refreshUser and app should navigate back → subscription-lock screen (redirect via _layout).
+          Testers may seed customers via API to save time, but verify at least one create-through-UI ends
+          up on the lock screen when count reaches 10.
+        - Lock screen shows the new copy ("وصلت إلى X زبون..."), price "20 دينار", "يُجدَّد كل 30 يوماً".
+        - Sign in as admin/admin1234, expand a user card:
+          - Card shows `زبائن: X / 10` for owners, and a sub-status row like "الاشتراك ساري (30 يوم متبقٍ)".
+          - Tapping `admin-extend-<id>` calls PUT /admin/users/{id}/extend and updates the display.
+          - "تفعيل" now grants 30 days automatically.
+          - "إلغاء التفعيل" now clears expiry.
+        - After admin extends the locked test owner, owner's next /auth/me returns is_active=true and
+          the lock screen is left (tap "تحقق من حالة التفعيل").
+        - Cleanup: restore testuser to a clean state (delete extra seed customers) so future test runs pass.
+
+      Files changed:
+        - /app/backend/server.py
+        - /app/frontend/app/subscription-lock.tsx
+        - /app/frontend/app/(app)/admin.tsx
+        - /app/frontend/app/(app)/add-customer.tsx
+        - /app/frontend/src/utils/api.ts
+
+      Credentials in /app/memory/test_credentials.md.
+
   - agent: "main"
     message: |
       Please run full backend + frontend testing for this iteration.

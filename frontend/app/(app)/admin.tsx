@@ -39,6 +39,7 @@ export default function AdminDashboardScreen() {
   const [resetCodes, setResetCodes] = useState<ResetCodeRow[]>([]);
   const [showCodes, setShowCodes] = useState(false);
   const [codesLoading, setCodesLoading] = useState(false);
+  const [extendBusyId, setExtendBusyId] = useState<string | null>(null);
 
   const [resetTarget, setResetTarget] = useState<UserPublic | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -119,6 +120,18 @@ export default function AdminDashboardScreen() {
     }
   };
 
+  const extendSub = async (u: UserPublic) => {
+    setExtendBusyId(u.id);
+    try {
+      await api.adminExtendSubscription(u.id, 30);
+      load();
+    } catch {
+      /* ignore */
+    } finally {
+      setExtendBusyId(null);
+    }
+  };
+
   const doReset = async () => {
     if (!resetTarget) return;
     if (!newPassword || newPassword.length < 4) {
@@ -144,6 +157,13 @@ export default function AdminDashboardScreen() {
 
   const renderUser = ({ item }: { item: UserPublic }) => {
     const isActive = item.is_active;
+    const exp = item.subscription_expires_at || null;
+    const expTs = exp ? new Date(exp).getTime() : 0;
+    const nowTs = Date.now();
+    const hasSub = !!exp && expTs > nowTs;
+    const isExpired = !!exp && expTs <= nowTs;
+    const daysLeft = hasSub ? Math.ceil((expTs - nowTs) / 86400000) : 0;
+    const isOwner = item.role !== "employee";
     return (
       <View style={styles.userCard} testID={`admin-user-${item.id}`}>
         <View style={styles.userTop}>
@@ -153,6 +173,11 @@ export default function AdminDashboardScreen() {
             <Text style={styles.userMeta}>
               {item.role === "employee" ? "موظف" : "مالك"} • {formatDate(item.created_at)}
             </Text>
+            {isOwner && (
+              <Text style={styles.userMeta}>
+                زبائن: {item.customer_count ?? 0} / {item.free_tier_limit ?? 10}
+              </Text>
+            )}
           </View>
           <View style={[styles.badge, isActive ? styles.badgeActive : styles.badgeInactive]}>
             <Text style={[styles.badgeText, { color: isActive ? colors.paymentGreenDark : colors.debtRedDark }]}>
@@ -160,6 +185,23 @@ export default function AdminDashboardScreen() {
             </Text>
           </View>
         </View>
+
+        {isOwner && (
+          <View style={styles.subRow} testID={`admin-sub-${item.id}`}>
+            <Ionicons
+              name={hasSub ? "shield-checkmark" : isExpired ? "time" : "shield-outline"}
+              size={16}
+              color={hasSub ? colors.paymentGreenDark : isExpired ? colors.debtRedDark : colors.textMuted}
+            />
+            <Text style={styles.subText}>
+              {hasSub
+                ? `الاشتراك ساري (${daysLeft} يوم متبقٍ) • ينتهي ${formatDate(exp)}`
+                : isExpired
+                ? `انتهى الاشتراك في ${formatDate(exp)}`
+                : "لا يوجد اشتراك — يعمل ضمن الحد المجاني"}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.userActions}>
           <TouchableOpacity
@@ -173,8 +215,28 @@ export default function AdminDashboardScreen() {
               size={18}
               color={colors.white}
             />
-            <Text style={styles.actionBtnText}>{isActive ? "إلغاء التفعيل" : "تفعيل"}</Text>
+            <Text style={styles.actionBtnText}>
+              {isActive ? "إلغاء التفعيل" : hasSub ? "تفعيل" : "تفعيل + 30 يوم"}
+            </Text>
           </TouchableOpacity>
+          {isOwner && (
+            <TouchableOpacity
+              testID={`admin-extend-${item.id}`}
+              style={[styles.actionBtn, styles.extendBtn]}
+              onPress={() => extendSub(item)}
+              activeOpacity={0.85}
+              disabled={extendBusyId === item.id}
+            >
+              {extendBusyId === item.id ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="add-circle" size={18} color={colors.white} />
+                  <Text style={styles.actionBtnText}>+30 يوم</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             testID={`admin-reset-${item.id}`}
             style={[styles.actionBtn, styles.resetBtn]}
@@ -452,7 +514,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   activateBtn: { backgroundColor: colors.paymentGreen },
   deactivateBtn: { backgroundColor: colors.debtRed },
   resetBtn: { backgroundColor: colors.primary },
+  extendBtn: { backgroundColor: colors.whatsapp },
   actionBtnText: { color: colors.white, fontSize: 13, fontWeight: "800" },
+  subRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  subText: { flex: 1, fontSize: 12, color: colors.textMain, textAlign: "right", fontWeight: "600" },
   emptyBox: { alignItems: "center", paddingTop: 60 },
   emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.textMain, marginTop: 12 },
   modalOverlay: {

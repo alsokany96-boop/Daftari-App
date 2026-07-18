@@ -18,7 +18,7 @@ import { useColors, ThemeColors } from "@/src/theme";
 export default function AddCustomerScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { activeStoreId, partyType: sessionPartyType } = useSession();
+  const { activeStoreId, partyType: sessionPartyType, refreshUser } = useSession();
   const params = useLocalSearchParams<{ party_type?: string }>();
   const partyType: PartyType = (params.party_type === "supplier" ? "supplier" : (sessionPartyType === "supplier" ? "supplier" : "customer"));
   const isSupplier = partyType === "supplier";
@@ -52,6 +52,13 @@ export default function AddCustomerScreen() {
         party_type: partyType,
         store_id: activeStoreId,
       });
+      // Re-fetch the user so subscription/lock state reflects the new customer
+      // count immediately (10th customer triggers the lock screen).
+      try {
+        await refreshUser();
+      } catch {
+        /* non-blocking */
+      }
       router.back();
     } catch (e: any) {
       setError(e?.message || "فشل الحفظ");

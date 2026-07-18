@@ -64,6 +64,10 @@ class UserPublic(BaseModel):
     is_active: bool
     parent_owner_id: Optional[str] = None
     created_at: Optional[str] = None
+    subscription_expires_at: Optional[str] = None
+    customer_count: int = 0
+    is_locked: bool = False
+    free_tier_limit: int = 10
 
 
 class Token(BaseModel):
@@ -169,6 +173,10 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class ExtendSubscriptionRequest(BaseModel):
+    days: int = 30
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -231,6 +239,9 @@ def create_access_token(data: dict) -> str:
 
 
 def to_user_public(u: dict) -> UserPublic:
+    """Sync fallback that reflects the physical is_active flag only.
+    Prefer to_user_public_effective(u) whenever the effective (subscription/limit
+    aware) status is required."""
     return UserPublic(
         id=u['id'],
         username=u['username'],
@@ -241,6 +252,88 @@ def to_user_public(u: dict) -> UserPublic:
         is_active=bool(u.get('is_active', True)),
         parent_owner_id=u.get('parent_owner_id'),
         created_at=u.get('created_at'),
+        subscription_expires_at=u.get('subscription_expires_at'),
+        customer_count=0,
+        is_locked=False,
+        free_tier_limit=FREE_TIER_LIMIT,
+    )
+
+
+async def get_owner_max_customer_count(owner_id: str) -> int:
+    """Return the highest customer (party_type='customer') count across ANY
+    single store owned by owner_id. Suppliers are NOT counted."""
+    pipeline = [
+        {'$match': {'owner_id': owner_id, 'party_type': 'customer'}},
+        {'$group': {'_id': '$store_id', 'n': {'$sum': 1}}},
+        {'$sort': {'n': -1}},
+        {'$limit': 1},
+    ]
+    async for row in db.customers.aggregate(pipeline):
+        return int(row.get('n', 0))
+    return 0
+
+
+def is_subscription_active(exp: Optional[str]) -> bool:
+    return bool(exp) and exp > now_iso()
+
+
+async def compute_effective_status(user: dict) -> dict:
+    """Compute lock/subscription meta for a user.
+    Rules:
+      - super_admin: never locked, always active
+      - owner: locked if max(store_customers) >= FREE_TIER_LIMIT AND no active subscription
+      - employee: inherits owner's lock; and is deactivated if either the parent
+        owner is locked or the employee's own is_active flag is False.
+    """
+    role = user.get('role', 'owner')
+    physical_active = bool(user.get('is_active', True))
+    if role == 'super_admin':
+        return {
+            'effective_active': True,
+            'is_locked': False,
+            'customer_count': 0,
+            'subscription_expires_at': None,
+        }
+
+    owner = user
+    if role == 'employee' and user.get('parent_owner_id'):
+        parent = await db.users.find_one({'id': user['parent_owner_id']}, {'_id': 0})
+        if parent:
+            owner = parent
+
+    count = await get_owner_max_customer_count(owner['id'])
+    exp = owner.get('subscription_expires_at')
+    sub_active = is_subscription_active(exp)
+    is_locked = count >= FREE_TIER_LIMIT and not sub_active
+
+    effective = physical_active and not is_locked
+    if role == 'employee':
+        effective = effective and bool(owner.get('is_active', True))
+
+    return {
+        'effective_active': effective,
+        'is_locked': is_locked,
+        'customer_count': count,
+        'subscription_expires_at': exp,
+    }
+
+
+async def to_user_public_effective(u: dict) -> UserPublic:
+    meta = await compute_effective_status(u)
+    return UserPublic(
+        id=u['id'],
+        username=u['username'],
+        shop_name=u.get('shop_name'),
+        phone=u.get('phone'),
+        email=u.get('email'),
+        role=u.get('role', 'owner'),
+        is_active=bool(meta['effective_active']),
+        parent_owner_id=u.get('parent_owner_id'),
+        created_at=u.get('created_at'),
+        subscription_expires_at=meta['subscription_expires_at'],
+        customer_count=int(meta['customer_count']),
+        is_locked=bool(meta['is_locked']),
+        free_tier_limit=FREE_TIER_LIMIT,
     )
 
 
@@ -272,7 +365,10 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> dic
 
 
 async def require_active_user(current_user: Annotated[dict, Depends(get_current_user)]) -> dict:
-    if not current_user.get('is_active', True):
+    if current_user.get('role') == 'super_admin':
+        return current_user
+    meta = await compute_effective_status(current_user)
+    if not meta['effective_active']:
         raise HTTPException(status_code=403, detail='الاشتراك غير مفعّل')
     return current_user
 
@@ -404,8 +500,10 @@ async def register(payload: UserRegister):
         role, is_active = 'super_admin', True
     else:
         role = 'owner'
-        owner_count = await db.users.count_documents({'role': 'owner'})
-        is_active = owner_count < FREE_TIER_LIMIT
+        # Free-tier is now enforced per-store (any store >= FREE_TIER_LIMIT
+        # customers locks the owner). New signups are always physically active;
+        # the lock kicks in dynamically once they exceed the limit.
+        is_active = True
 
     user_id = str(uuid.uuid4())
     user_doc = {
@@ -418,13 +516,14 @@ async def register(payload: UserRegister):
         'role': role,
         'is_active': is_active,
         'parent_owner_id': None,
+        'subscription_expires_at': None,
         'created_at': now_iso(),
     }
     await db.users.insert_one(user_doc)
     if role == 'owner':
         await ensure_default_store(user_id)
     token = create_access_token({'sub': user_id})
-    return Token(access_token=token, token_type='bearer', user=to_user_public(user_doc))
+    return Token(access_token=token, token_type='bearer', user=await to_user_public_effective(user_doc))
 
 
 @api_router.post('/auth/login', response_model=Token)
@@ -433,12 +532,12 @@ async def login(payload: UserLogin):
     if not user or not verify_password(payload.password, user['password_hash']):
         raise HTTPException(status_code=401, detail='اسم المستخدم أو كلمة المرور غير صحيحة')
     token = create_access_token({'sub': user['id']})
-    return Token(access_token=token, token_type='bearer', user=to_user_public(user))
+    return Token(access_token=token, token_type='bearer', user=await to_user_public_effective(user))
 
 
 @api_router.get('/auth/me', response_model=UserPublic)
 async def me(current_user: Annotated[dict, Depends(get_current_user)]):
-    return to_user_public(current_user)
+    return await to_user_public_effective(current_user)
 
 
 @api_router.post('/auth/change-password')
@@ -826,7 +925,10 @@ async def list_staff(current_user: CurrentOwner):
     if current_user.get('role') == 'super_admin':
         return []
     cursor = db.users.find({'parent_owner_id': current_user['id'], 'role': 'employee'}, {'_id': 0})
-    return [to_user_public(u) async for u in cursor]
+    results: List[UserPublic] = []
+    async for u in cursor:
+        results.append(await to_user_public_effective(u))
+    return results
 
 
 @api_router.post('/staff', response_model=UserPublic)
@@ -851,7 +953,7 @@ async def create_staff(payload: StaffCreate, current_user: CurrentOwner):
         'created_at': now_iso(),
     }
     await db.users.insert_one(doc)
-    return to_user_public(doc)
+    return await to_user_public_effective(doc)
 
 
 @api_router.put('/staff/{staff_id}', response_model=UserPublic)
@@ -871,7 +973,7 @@ async def update_staff(staff_id: str, payload: StaffUpdate, current_user: Curren
     if updates:
         await db.users.update_one({'id': staff_id}, {'$set': updates})
     staff = await db.users.find_one({'id': staff_id}, {'_id': 0})
-    return to_user_public(staff)
+    return await to_user_public_effective(staff)
 
 
 @api_router.delete('/staff/{staff_id}')
@@ -894,25 +996,66 @@ async def admin_list_users(current_user: CurrentSuperAdmin):
         ]
     }
     cursor = db.users.find(query, {'_id': 0}).sort('created_at', -1)
-    return [to_user_public(u) async for u in cursor]
+    results: List[UserPublic] = []
+    async for u in cursor:
+        results.append(await to_user_public_effective(u))
+    return results
 
 
 @api_router.put('/admin/users/{user_id}/activate', response_model=UserPublic)
 async def admin_activate(user_id: str, current_user: CurrentSuperAdmin):
-    res = await db.users.update_one({'id': user_id}, {'$set': {'is_active': True}})
+    """Grant a fresh 30-day subscription starting now (also re-enables physical
+    is_active in case it was toggled off)."""
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    res = await db.users.update_one(
+        {'id': user_id},
+        {'$set': {'is_active': True, 'subscription_expires_at': expires_at}},
+    )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail='المستخدم غير موجود')
     u = await db.users.find_one({'id': user_id}, {'_id': 0})
-    return to_user_public(u)
+    return await to_user_public_effective(u)
+
+
+@api_router.put('/admin/users/{user_id}/extend', response_model=UserPublic)
+async def admin_extend(user_id: str, payload: ExtendSubscriptionRequest, current_user: CurrentSuperAdmin):
+    """Extend an existing subscription by N days. Adds on top of the current
+    expiry when the subscription is still active; otherwise starts from now."""
+    days = max(1, min(int(payload.days or 30), 365))
+    u = await db.users.find_one({'id': user_id}, {'_id': 0})
+    if not u:
+        raise HTTPException(status_code=404, detail='المستخدم غير موجود')
+    now = datetime.now(timezone.utc)
+    current_exp = u.get('subscription_expires_at')
+    base = now
+    if current_exp:
+        try:
+            parsed = datetime.fromisoformat(current_exp)
+            if parsed > now:
+                base = parsed
+        except Exception:
+            base = now
+    new_exp = (base + timedelta(days=days)).isoformat()
+    await db.users.update_one(
+        {'id': user_id},
+        {'$set': {'is_active': True, 'subscription_expires_at': new_exp}},
+    )
+    u = await db.users.find_one({'id': user_id}, {'_id': 0})
+    return await to_user_public_effective(u)
 
 
 @api_router.put('/admin/users/{user_id}/deactivate', response_model=UserPublic)
 async def admin_deactivate(user_id: str, current_user: CurrentSuperAdmin):
-    res = await db.users.update_one({'id': user_id}, {'$set': {'is_active': False}})
+    """Clear the subscription. The account remains physically active but any
+    owner that has hit the free-tier limit will now see the lock screen."""
+    res = await db.users.update_one(
+        {'id': user_id},
+        {'$set': {'is_active': False, 'subscription_expires_at': None}},
+    )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail='المستخدم غير موجود')
     u = await db.users.find_one({'id': user_id}, {'_id': 0})
-    return to_user_public(u)
+    return await to_user_public_effective(u)
 
 
 @api_router.put('/admin/users/{user_id}/reset-password', response_model=UserPublic)
@@ -925,7 +1068,7 @@ async def admin_reset_password(user_id: str, payload: ResetPasswordRequest, curr
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail='المستخدم غير موجود')
     u = await db.users.find_one({'id': user_id}, {'_id': 0})
-    return to_user_public(u)
+    return await to_user_public_effective(u)
 
 
 app.include_router(api_router)

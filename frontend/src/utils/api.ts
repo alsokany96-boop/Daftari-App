@@ -42,6 +42,10 @@ export type UserPublic = {
   is_active: boolean;
   parent_owner_id?: string | null;
   created_at?: string | null;
+  subscription_expires_at?: string | null;
+  customer_count?: number;
+  is_locked?: boolean;
+  free_tier_limit?: number;
 };
 
 export type Store = {
@@ -221,6 +225,11 @@ export const api = {
       body: JSON.stringify({ new_password }),
     }),
   adminListResetCodes: () => request<ResetCodeRow[]>("/admin/reset-codes"),
+  adminExtendSubscription: (id: string, days: number = 30) =>
+    request<UserPublic>(`/admin/users/${id}/extend`, {
+      method: "PUT",
+      body: JSON.stringify({ days }),
+    }),
 };
 
 export function whatsappUrl(phone: string, message: string): string {

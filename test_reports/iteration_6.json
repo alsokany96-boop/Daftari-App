@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 6 (subscription overhaul: per-store customer lock + monthly 30d subscription + admin activate/extend/deactivate) FULLY VERIFIED on backend (17/17 v6 tests pass) and on frontend UI (all admin flows + lock-screen copy + expired copy + status card verified live). Found ONE frontend bug: subscription-lock screen's refresh-status-button re-fetches user but does NOT route to /home when the user becomes active again — needs a useEffect in subscription-lock.tsx watching user.is_active.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "subscription-lock.tsx",
+        "issue": "refresh-status-button calls refreshUser() but the screen does not react to the updated user.is_active. Once admin activates the subscription, tapping 'تحقق من حالة التفعيل' fetches the fresh user (is_active=true, is_locked=false) but the URL remains at /subscription-lock. Add: `useEffect(() => { if (user && user.is_active) router.replace('/(app)/home'); }, [user?.is_active])` in subscription-lock.tsx (or route back to '/'). Verified reproducibly: seeded v6ui_exp_* owner past-exp, logged in (lands on /subscription-lock), admin activated via API, tapped refresh — URL stayed at /subscription-lock.",
+        "testID": "refresh-status-button",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow* props (carry-over)", "issue": "'shadow*' style props are deprecated on RN Web. Use boxShadow. Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_daftari_v6.py",
+    "/app/test_reports/pytest/pytest_v6_results.xml"
+  ],
+  "action_items": [
+    "Fix refresh-status-button redirect on /subscription-lock: add a useEffect in /app/frontend/app/subscription-lock.tsx that watches `user?.is_active` and, when true, calls `router.replace('/(app)/home')` (or `router.replace('/')` to reuse the Index redirect logic). Otherwise the user is stuck on the lock screen even after admin activation."
+  ],
+  "critical_code_review_comments": [
+    "server.py: `compute_effective_status` is async (uses aggregate) and is correctly awaited from `require_active_user` and `to_user_public_effective` — protected endpoints now properly return 403 when the owner crosses free-tier without a subscription. Verified with 11th-customer POST returning 403 + Arabic detail 'الاشتراك غير مفعّل'.",
+    "server.py: `get_owner_max_customer_count` uses a single MongoDB aggregation with match on party_type='customer' — suppliers are correctly excluded. Verified 10 suppliers → customer_count=0.",
+    "server.py: admin_activate always writes now+30d (correct fresh grant), admin_extend adds days on top of current_exp when still in the future OR from now when expired — verified extend after 30d activate → 60d expiry (±60s tolerance).",
+    "server.py: admin_deactivate clears subscription_expires_at AND flips physical is_active to False — combined with lock=count>=limit this produces effective is_active=false when the user is above the free tier.",
+    "server.py: `is_subscription_active` uses lexicographic ISO string comparison — works because all ISOs are UTC+00:00. Slight fragility if a mixed-timezone value ever gets stored; consider `datetime.fromisoformat > now` in a future iteration.",
+    "server.py: /auth/me uses `get_current_user` (not `require_active_user`) — locked owners can still fetch their own status, which is required for the subscription-lock screen refresh flow. Verified via test_me_still_200_when_locked.",
+    "server.py: admin_extend clamps days to 1..365 which is sensible. Non-super-admin caller correctly gets 403 (test_extend_forbidden_for_non_admin passes).",
+    "server.py: admin list endpoint returns UserPublic via `to_user_public_effective` for every row — customer_count and subscription_expires_at are populated for every owner card in the admin UI (verified 24 users load).",
+    "Frontend admin.tsx: 'زبائن: N / 10' shown for owner rows (not employees), sub-status row correctly shows 'لا يوجد اشتراك — يعمل ضمن الحد المجاني' when no exp is set, and 'الاشتراك ساري (N يوم متبقٍ) • ينتهي DD/MM/YYYY' after activate. Both admin-toggle-* and admin-extend-* buttons hit the correct endpoints and re-render the card.",
+    "Frontend subscription-lock.tsx: subtitle switches copy correctly based on isExpired flag; status card shows only when expDate is set; price card shows monthly copy 'يُجدَّد كل 30 يوماً' + subscription-price = 20. MISSING redirect-on-active behavior described above."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_daftari_v6.py (new)",
+    "/app/test_reports/pytest/pytest_v6_results.xml (new)",
+    "/app/test_reports/iteration_6.json (new)",
+    "/tmp/v6_set_past.py (helper — not in /app)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 v6 tests). v4/v5 not re-run per instructions.",
+    "frontend": "95% — all subscription UI slices verified (lock-screen copy fresh + expired, status card, price card, admin sub-row, admin extend button, admin activate → 30d copy, testuser home + admin dashboard load). 1 defect: refresh redirect."
+  },
+  "seed_data_creation": "Backend test users (v6_lock_test_*, v6_supplier_test_*, v6_multi_test_*, v6_adminops_*, v6_expired_*, v6_nonadmin_*, v6_owner_*) and all their stores/customers were CREATED and then DELETED at the end of the v6 pytest run (TestCleanup.test_zzz_cleanup_v6_users). Frontend UI runs also created v6ui_lock_* / v6ui_exp_* owners and cleaned them up at end of each script. Verified `db.users.count({username:/^v6_/})==0` post-run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend suites still to run in regression: test_daftari_backend.py → test_daftari_v2.py → test_change_password.py → test_daftari_v4.py → test_daftari_v5.py → test_daftari_v6.py. Env: EXPO_PUBLIC_BACKEND_URL + MONGO_URL. Credentials unchanged. Key testIDs verified live: signin-username-input/signin-password-input/signin-submit-button, subscription-lock-screen, subscription-price, subscription-status-card, refresh-status-button, admin-toggle-<id>, admin-extend-<id>, admin-sub-<id>, admin-user-<id>. Once the main agent adds the redirect useEffect in subscription-lock.tsx, re-verify: (1) after admin activate, tapping refresh-status-button routes to /home; (2) after admin deactivate on an at-limit owner, /(app)/home redirects back to /subscription-lock. testuser is confirmed clean (customer_count=1, is_locked=false, password 'test1234' works). To set a past expiration for manual testing use /tmp/v6_set_past.py <user_id> with MONGO_URL/DB_NAME env or python /root/.venv/bin/python.",
+  "rca_of_issue": "Bug: subscription-lock screen refresh doesn't redirect out on re-activation. Root cause: /app/frontend/app/subscription-lock.tsx has no side-effect watching `user.is_active`; the Redirect logic lives ONLY in /app/frontend/app/index.tsx, so navigating to '/' (or replacing to /(app)/home) after a state change is needed. Reproduction: (1) POST /auth/register a new v6 owner, add 10 customers to lock him, (2) sign in via UI — lands at /subscription-lock as expected, (3) admin PUT /admin/users/{id}/activate via API to grant 30d, (4) on the lock screen tap 'تحقق من حالة التفعيل' — the /auth/me refetch returns is_locked=false + is_active=true, but the URL stays at /subscription-lock. Fix: add `useEffect(() => { if (user && !user.is_locked && user.is_active) router.replace('/'); }, [user?.is_active, user?.is_locked])` in subscription-lock.tsx (import router from 'expo-router'). Alternative UX: after refreshUser(), also call `router.replace('/')` directly from the button handler."
+}

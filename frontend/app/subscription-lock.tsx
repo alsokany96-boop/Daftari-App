@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSession } from "@/src/ctx/SessionProvider";
 import { useColors, ThemeColors, CURRENCY } from "@/src/theme";
 import { whatsappUrl } from "@/src/utils/api";
-import { fmtAmount } from "@/src/utils/format";
+import { fmtAmount, fmtDate } from "@/src/utils/format";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 export default function SubscriptionLockScreen() {
@@ -17,9 +17,17 @@ export default function SubscriptionLockScreen() {
   const adminPhone = config?.admin_phone || "0926609606";
   const adminWa = config?.admin_whatsapp || "218926609606";
   const price = config?.subscription_price ?? 20;
+  const limit = user?.free_tier_limit ?? config?.free_tier_limit ?? 10;
+  const count = user?.customer_count ?? 0;
+  const exp = user?.subscription_expires_at || null;
+  const expDate = exp ? new Date(exp) : null;
+  const isExpired = !!expDate && expDate.getTime() < Date.now();
 
   const openWhatsApp = () => {
-    const message = `مرحباً، أنا ${user?.username || ""} وأود تفعيل اشتراكي في تطبيق دفتري (${price} ${CURRENCY}).`;
+    const status = isExpired
+      ? `انتهت صلاحية اشتراكي في ${fmtDate(exp)}`
+      : `وصلت إلى ${count} زبون في أحد المحلات (الحد المجاني ${limit})`;
+    const message = `مرحباً، أنا ${user?.username || ""} وأود تجديد/تفعيل اشتراكي الشهري في تطبيق دفتري (${price} ${CURRENCY}).\n${status}.`;
     const url = whatsappUrl(adminWa, message);
     Linking.openURL(url).catch(() => {});
   };
@@ -27,6 +35,10 @@ export default function SubscriptionLockScreen() {
   const call = () => {
     Linking.openURL(`tel:${adminPhone}`).catch(() => {});
   };
+
+  const subtitle = isExpired
+    ? `انتهت صلاحية اشتراكك الشهري في ${fmtDate(exp)}. للاستمرار في استخدام التطبيق، يرجى تجديد الاشتراك عبر التواصل مع المشرف.`
+    : `وصلت إلى ${count} زبون في أحد محلاتك، وهو الحد الأقصى المجاني (${limit} زبون لكل محل). لمتابعة إضافة زبائن، يرجى تفعيل الاشتراك الشهري.`;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]} testID="subscription-lock-screen">
@@ -36,17 +48,32 @@ export default function SubscriptionLockScreen() {
         </View>
 
         <Text style={styles.title}>الاشتراك مطلوب</Text>
-        <Text style={styles.subtitle}>
-          لقد تم الوصول إلى الحد المجاني. لتفعيل حسابك، يرجى التواصل مع المشرف عبر الواتساب.
-        </Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
 
         <View style={styles.priceCard}>
-          <Text style={styles.priceLabel}>قيمة الاشتراك</Text>
+          <Text style={styles.priceLabel}>الاشتراك الشهري</Text>
           <View style={styles.priceRow}>
             <Text style={styles.priceAmount} testID="subscription-price">{fmtAmount(price)}</Text>
             <Text style={styles.priceCurrency}>{CURRENCY}</Text>
           </View>
+          <Text style={styles.priceMonthly}>يُجدَّد كل 30 يوماً</Text>
         </View>
+
+        {expDate && (
+          <View style={styles.statusCard} testID="subscription-status-card">
+            <Ionicons
+              name={isExpired ? "alert-circle" : "checkmark-circle"}
+              size={20}
+              color={isExpired ? colors.debtRedDark : colors.paymentGreenDark}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.statusLabel}>
+                {isExpired ? "انتهت الصلاحية" : "الاشتراك ساري حتى"}
+              </Text>
+              <Text style={styles.statusValue}>{fmtDate(exp)}</Text>
+            </View>
+          </View>
+        )}
 
         <View style={styles.contactCard}>
           <Text style={styles.contactLabel}>رقم المشرف</Text>
@@ -148,6 +175,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   priceRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 6 },
   priceAmount: { fontSize: 42, fontWeight: "900", color: colors.debtRed },
   priceCurrency: { fontSize: 18, fontWeight: "700", color: colors.debtRedDark },
+  priceMonthly: { color: colors.debtRedDark, fontSize: 12, fontWeight: "600", marginTop: 6 },
+  statusCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 12,
+    width: "100%",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statusLabel: { color: colors.textMuted, fontSize: 12, fontWeight: "700", textAlign: "right" },
+  statusValue: { color: colors.textMain, fontSize: 16, fontWeight: "800", marginTop: 2, textAlign: "right" },
   contactCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,
