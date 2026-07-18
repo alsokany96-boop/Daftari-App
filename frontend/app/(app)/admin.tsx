@@ -9,14 +9,16 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
+  Linking,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { api, UserPublic } from "@/src/utils/api";
+import { api, UserPublic, ResetCodeRow, whatsappUrl } from "@/src/utils/api";
 import { useSession } from "@/src/ctx/SessionProvider";
 import { useColors, ThemeColors } from "@/src/theme";
-import { fmtDate } from "@/src/utils/format";
+import { fmtDateTime, fmtDate } from "@/src/utils/format";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 function formatDate(iso?: string | null) {
@@ -34,6 +36,9 @@ export default function AdminDashboardScreen() {
   const [showSignOut, setShowSignOut] = useState(false);
   const [pendingDeactivate, setPendingDeactivate] = useState<UserPublic | null>(null);
   const [toggleBusy, setToggleBusy] = useState(false);
+  const [resetCodes, setResetCodes] = useState<ResetCodeRow[]>([]);
+  const [showCodes, setShowCodes] = useState(false);
+  const [codesLoading, setCodesLoading] = useState(false);
 
   const [resetTarget, setResetTarget] = useState<UserPublic | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -44,8 +49,12 @@ export default function AdminDashboardScreen() {
   const load = useCallback(async () => {
     try {
       setError(null);
-      const list = await api.adminListUsers();
+      const [list, codes] = await Promise.all([
+        api.adminListUsers(),
+        api.adminListResetCodes().catch(() => [] as ResetCodeRow[]),
+      ]);
       setUsers(list);
+      setResetCodes(codes);
     } catch (e: any) {
       setError(e?.message || "خطأ في التحميل");
     } finally {
@@ -53,6 +62,29 @@ export default function AdminDashboardScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  const refreshResetCodes = useCallback(async () => {
+    setCodesLoading(true);
+    try {
+      const codes = await api.adminListResetCodes();
+      setResetCodes(codes);
+    } catch {
+      /* ignore */
+    } finally {
+      setCodesLoading(false);
+    }
+  }, []);
+
+  const shareCode = (row: ResetCodeRow) => {
+    const message = `رمز التحقق لاستعادة كلمة المرور لحساب "${row.username}" في تطبيق دفتري: ${row.code}\nصالح لمدة قصيرة.`;
+    const target = (row.phone || "").trim();
+    if (target) {
+      const url = whatsappUrl(target, message);
+      Linking.openURL(url).catch(() => {});
+    } else {
+      Linking.openURL(`https://wa.me/?text=${encodeURIComponent(message)}`).catch(() => {});
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -197,6 +229,61 @@ export default function AdminDashboardScreen() {
           </Text>
         </View>
       </View>
+
+      {/* Pending Manual OTP Codes */}
+      <TouchableOpacity
+        testID="admin-toggle-codes"
+        style={styles.resetCodesBar}
+        onPress={() => {
+          setShowCodes((v) => !v);
+          if (!showCodes) refreshResetCodes();
+        }}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="key" size={20} color={colors.debtRedDark} />
+        <Text style={styles.resetCodesText}>
+          رموز استعادة كلمة المرور المعلّقة ({resetCodes.length})
+        </Text>
+        <Ionicons
+          name={showCodes ? "chevron-up" : "chevron-down"}
+          size={20}
+          color={colors.debtRedDark}
+        />
+      </TouchableOpacity>
+
+      {showCodes && (
+        <View style={styles.resetCodesBox}>
+          {codesLoading ? (
+            <ActivityIndicator color={colors.debtRed} />
+          ) : resetCodes.length === 0 ? (
+            <Text style={styles.emptyCodesText}>لا توجد رموز معلّقة</Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 220 }}>
+              {resetCodes.map((row) => (
+                <View key={row.id} style={styles.codeCard} testID={`reset-code-${row.id}`}>
+                  <TouchableOpacity
+                    testID={`share-code-${row.id}`}
+                    style={styles.codeShareBtn}
+                    onPress={() => shareCode(row)}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="logo-whatsapp" size={20} color={colors.white} />
+                  </TouchableOpacity>
+                  <View style={styles.codePill}>
+                    <Text style={styles.codeValue}>{row.code}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.codeUser}>{row.username}</Text>
+                    <Text style={styles.codeMeta}>
+                      {row.phone || "—"} • ينتهي {fmtDateTime(row.expires_at)}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      )}
 
       {error && <Text style={styles.error}>{error}</Text>}
 
@@ -395,4 +482,54 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   modalActions: { flexDirection: "row", gap: 10, marginTop: 20 },
   modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
   modalBtnText: { color: colors.white, fontSize: 15, fontWeight: "800" },
+  resetCodesBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.debtRedBg,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.debtRed,
+  },
+  resetCodesText: { flex: 1, fontSize: 14, fontWeight: "800", color: colors.debtRedDark, textAlign: "right" },
+  resetCodesBox: {
+    backgroundColor: colors.surface,
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyCodesText: { color: colors.textMuted, textAlign: "center", padding: 12, fontWeight: "600" },
+  codeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 10,
+    marginBottom: 8,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 10,
+  },
+  codeUser: { fontSize: 14, fontWeight: "800", color: colors.textMain, textAlign: "right" },
+  codeMeta: { fontSize: 11, color: colors.textMuted, marginTop: 2, textAlign: "right" },
+  codePill: {
+    backgroundColor: colors.debtRed,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  codeValue: { color: colors.white, fontSize: 18, fontWeight: "900", letterSpacing: 3 },
+  codeShareBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.whatsapp,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 });

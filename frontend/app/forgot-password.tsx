@@ -142,7 +142,7 @@ export default function ForgotPasswordScreen() {
           <>
             <Text style={styles.title}>الخطوة 2 من 2</Text>
             <Text style={styles.subtitle}>
-              تواصل مع المشرف عبر الواتساب للحصول على رمز التحقق، ثم أدخله أدناه واختر كلمة مرور جديدة.
+              تم إنشاء رمز تحقق مؤقت. اضغط زر الواتساب أدناه للتواصل مع المشرف، سيرسل لك المشرف رمز التحقق الخاص بحسابك، ثم أدخله هنا واختر كلمة مرور جديدة.
             </Text>
 
             <TouchableOpacity

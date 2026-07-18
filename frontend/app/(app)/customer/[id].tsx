@@ -69,20 +69,20 @@ export default function CustomerDetailScreen() {
       /* default */
     }
     const message = buildReminderMessage(template, {
-      name: customer.name,
+      name: customer?.name || "",
       shop: user?.shop_name || "بقالتنا",
       amount: fmtAmount(Math.abs(debt)),
       currency: CURRENCY,
     });
-    Linking.openURL(whatsappUrl(customer.phone, message)).catch(() => {});
+    Linking.openURL(whatsappUrl(customer?.phone || "", message)).catch(() => {});
   };
 
   const sendLimitAlert = () => {
     if (!customer || customer.max_debt == null) return;
-    const message = `عزيزي ${customer.name}، نود تذكيرك بأن مديونيتك قد بلغت الحد الأقصى وهو ${fmtAmount(
+    const message = `عزيزي ${customer?.name || ""}، نود تذكيرك بأن مديونيتك قد بلغت الحد الأقصى وهو ${fmtAmount(
       customer.max_debt
     )} ${CURRENCY}. يرجى السداد في أقرب وقت.`;
-    Linking.openURL(whatsappUrl(customer.phone, message)).catch(() => {});
+    Linking.openURL(whatsappUrl(customer?.phone || "", message)).catch(() => {});
   };
 
   const doDeleteTx = async () => {
@@ -173,8 +173,8 @@ export default function CustomerDetailScreen() {
           <Ionicons name="arrow-forward" size={26} color={colors.textMain} />
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: "center" }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{customer.name}</Text>
-          <Text style={styles.headerPhone}>{customer.phone}</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>{customer?.name ?? ""}</Text>
+          <Text style={styles.headerPhone}>{customer?.phone ?? ""}</Text>
         </View>
         <TouchableOpacity
           testID="detail-edit-button"

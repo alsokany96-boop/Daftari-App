@@ -35,9 +35,9 @@ export default function EditCustomerScreen() {
     if (!id) return;
     try {
       const c = await api.getCustomer(id);
-      setName(c.name);
-      setPhone(c.phone);
-      setMaxDebt(c.max_debt ? String(c.max_debt) : "");
+      setName(c?.name ?? "");
+      setPhone(c?.phone ?? "");
+      setMaxDebt(c?.max_debt != null ? String(c.max_debt) : "");
     } catch (e: any) {
       setError(e?.message || "فشل التحميل");
     } finally {

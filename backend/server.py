@@ -328,6 +328,37 @@ async def resolve_store_id(user: dict, provided_store_id: Optional[str]) -> str:
     return default['id']
 
 
+def to_customer(c: dict, totals: dict) -> Customer:
+    return Customer(
+        id=c.get('id', ''),
+        owner_id=c.get('owner_id', ''),
+        store_id=c.get('store_id', ''),
+        party_type=c.get('party_type', 'customer'),
+        name=c.get('name', ''),
+        phone=c.get('phone', ''),
+        max_debt=c.get('max_debt'),
+        created_at=c.get('created_at', ''),
+        total_debt=totals.get('total_debt', 0.0),
+        last_transaction_at=totals.get('last_transaction_at'),
+    )
+
+
+def to_transaction(t: dict) -> Transaction:
+    return Transaction(
+        id=t.get('id', ''),
+        customer_id=t.get('customer_id', ''),
+        owner_id=t.get('owner_id', ''),
+        store_id=t.get('store_id', ''),
+        party_type=t.get('party_type', 'customer'),
+        author_id=t.get('author_id', t.get('owner_id', '')),
+        type=t.get('type', 'debt'),
+        amount=float(t.get('amount', 0)),
+        notes=t.get('notes'),
+        receipt_image=t.get('receipt_image'),
+        created_at=t.get('created_at', ''),
+    )
+
+
 async def compute_customer_totals(customer_id: str, owner_id: str, store_id: str) -> dict:
     cursor = db.transactions.find(
         {'customer_id': customer_id, 'owner_id': owner_id, 'store_id': store_id},
@@ -618,7 +649,7 @@ async def create_customer(payload: CustomerCreate, current_user: CurrentUser):
         'created_at': now,
     }
     await db.customers.insert_one(doc)
-    return Customer(**doc, total_debt=0.0, last_transaction_at=None)
+    return to_customer(doc, {'total_debt': 0.0, 'last_transaction_at': None})
 
 
 @api_router.get('/customers', response_model=List[Customer])
@@ -634,15 +665,14 @@ async def list_customers(
     if party_type in ('customer', 'supplier'):
         query['party_type'] = party_type
     else:
-        # Default include customers only for backward-compatibility; front-end should always pass a type.
         query['party_type'] = 'customer'
     if search:
         query['name'] = {'$regex': search, '$options': 'i'}
     cursor = db.customers.find(query, {'_id': 0}).sort('created_at', -1)
     results = []
     async for c in cursor:
-        totals = await compute_customer_totals(c['id'], scope, resolved_store)
-        results.append(Customer(**c, **totals))
+        totals = await compute_customer_totals(c.get('id', ''), scope, resolved_store)
+        results.append(to_customer(c, totals))
     return results
 
 
@@ -673,8 +703,19 @@ async def get_customer(customer_id: str, current_user: CurrentUser):
     c = await db.customers.find_one({'id': customer_id, 'owner_id': scope}, {'_id': 0})
     if not c:
         raise HTTPException(status_code=404, detail='الزبون غير موجود')
-    totals = await compute_customer_totals(customer_id, scope, c['store_id'])
-    return Customer(**c, **totals)
+    # Migrate legacy record inline if needed
+    if not c.get('store_id') or not c.get('party_type'):
+        default = await ensure_default_store(scope)
+        await db.customers.update_one(
+            {'id': customer_id},
+            {'$set': {
+                'store_id': c.get('store_id') or default['id'],
+                'party_type': c.get('party_type') or 'customer',
+            }},
+        )
+        c = await db.customers.find_one({'id': customer_id, 'owner_id': scope}, {'_id': 0})
+    totals = await compute_customer_totals(customer_id, scope, c.get('store_id', ''))
+    return to_customer(c, totals)
 
 
 @api_router.put('/customers/{customer_id}', response_model=Customer)
@@ -688,8 +729,8 @@ async def update_customer(customer_id: str, payload: CustomerUpdate, current_use
     c = await db.customers.find_one({'id': customer_id, 'owner_id': scope}, {'_id': 0})
     if not c:
         raise HTTPException(status_code=404, detail='الزبون غير موجود')
-    totals = await compute_customer_totals(customer_id, scope, c['store_id'])
-    return Customer(**c, **totals)
+    totals = await compute_customer_totals(customer_id, scope, c.get('store_id', ''))
+    return to_customer(c, totals)
 
 
 @api_router.delete('/customers/{customer_id}')
@@ -730,7 +771,7 @@ async def create_transaction(payload: TransactionCreate, current_user: CurrentUs
         'created_at': now,
     }
     await db.transactions.insert_one(doc)
-    return Transaction(**doc)
+    return to_transaction(doc)
 
 
 @api_router.get('/transactions/{customer_id}', response_model=List[Transaction])
@@ -739,10 +780,7 @@ async def list_transactions(customer_id: str, current_user: CurrentUser):
     cursor = db.transactions.find({'customer_id': customer_id, 'owner_id': scope}, {'_id': 0}).sort('created_at', -1)
     results: List[Transaction] = []
     async for t in cursor:
-        t.setdefault('author_id', t.get('owner_id', ''))
-        t.setdefault('store_id', '')
-        t.setdefault('party_type', 'customer')
-        results.append(Transaction(**t))
+        results.append(to_transaction(t))
     return results
 
 
