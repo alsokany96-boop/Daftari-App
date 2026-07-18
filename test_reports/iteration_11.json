@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 11 dark-mode contrast bug fix VERIFIED. All four regressed CTA buttons now render correct high-contrast colors in dark mode: add-customer-fab bg=#3B82F6 (blue) with white '+' icon; add-customer-submit ('حفظ الزبون') bg=#3B82F6 with white text; staff-delete-<id> bg=#F87171 (dark.debtRed) with white trash icon; admin-reset-<id> bg=#3B82F6 with white key icon + text; admin-profile-open icon uses colors.primary (blue) and is clearly visible. Light-mode regression check confirms unchanged: FAB & submit bg=#0F172A (light.primary navy) with white content; staff-delete bg=#EF4444 (light.debtRed). Both testuser and admin login flows exercised. Theme fix in /app/frontend/src/theme.ts (dark.primary #F8FAFC → #3B82F6, primaryText #FFFFFF) and staff.tsx explicit backgroundColor=colors.debtRed all working as designed. No mocks were used. No frontend bugs found related to this fix.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_11.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "theme.ts: The comment on dark.primary correctly documents the dual-purpose (CTA background AND accent color) — good self-documenting change.",
+    "home.tsx FAB uses shadowColor: colors.primary — in dark mode this is now blue, which is fine but slightly more prominent shadow; consider colors.overlay-based shadow if too loud (minor, not blocking).",
+    "admin.tsx admin-profile-open uses Ionicons color={colors.primary} — renders blue in dark, dark-navy in light; both visible. DOM getComputedStyle returned null for Ionicon svg (font-glyph based rendering on web) but visual capture confirms the icon is clearly visible."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (skipped by request)",
+    "frontend": "100% (5/5 dark-mode assertions passed, 3/3 light-mode regression assertions passed)"
+  },
+  "seed_data_creation": "None. Staff screen already had 3 pre-existing employees (emp_17ea97, emp_ui_36331, uiemp_ea979) from prior iterations; the test used them for color assertion and did not create/delete any temp accounts.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sign-in screen testIDs are 'signin-username-input', 'signin-password-input', 'signin-submit-button' (NOT 'login-*'). Signout ConfirmDialog uses 'signout-confirm-confirm' / 'signout-confirm-cancel'. When forcing color scheme via Playwright use `await page.emulate_media(color_scheme='dark')` BEFORE the initial goto, then `await page.reload()` if you toggle mid-session — React Native useColorScheme() on web reacts to prefers-color-scheme media query. When verifying colors in dark mode, use getComputedStyle().backgroundColor on the DOM element bound to the testID — Ionicons are font glyphs so getComputedStyle on the inner <svg> may return null for color; assert on the container's computed color instead.",
+  "rca_of_issue": "Original bug: dark palette had `primary: '#F8FAFC'` (near-white) which was reused as CTA background across FAB / submit buttons / admin reset button, making white foreground text/icons invisible on near-white background. Fix set dark.primary='#3B82F6' (saturated blue) and dark.primaryText='#FFFFFF' — contrast ratio ~4.5:1 between #FFFFFF and #3B82F6 (WCAG AA large-text compliant). Staff trash button in staff.tsx was also directly using colors.primary; the iteration-11 fix additionally hard-codes backgroundColor=colors.debtRed to guarantee a red destructive-action affordance in both themes. All fixes verified via DOM getComputedStyle assertions plus visual screenshots in the browser preview."
+}

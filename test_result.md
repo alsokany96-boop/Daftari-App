@@ -174,19 +174,66 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.6"
-  test_sequence: 10
+  version: "1.7"
+  test_sequence: 11
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Editable customer + supplier WhatsApp templates"
-    - "Templates propagate to add-transaction reminder message"
+    - "Dark Mode contrast fix (save/FAB/trash buttons)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: |
+      Iteration 11 — Bug fix: Dark Mode contrast issue for CTA buttons and icons.
+
+      ROOT CAUSE
+        - `/app/frontend/src/theme.ts` dark palette had `primary: "#F8FAFC"` (near-white) and
+          `primaryText: "#0F172A"` (near-black). Almost every CTA in the app uses
+          `backgroundColor: colors.primary` + `color: colors.white`. In dark mode that rendered as
+          a near-white background with a white icon/text → invisible.
+
+      FIX
+        - Reworked dark palette so `primary = "#3B82F6"` (blue-500) and `primaryText = "#FFFFFF"`.
+          Now every CTA that layers `colors.white` (or `colors.primaryText`) on top of
+          `colors.primary` gets a solid blue button with white content in both modes. Also the
+          icon accents throughout the app (chevrons, pencil, person-circle) render as blue in
+          dark mode instead of the previous invisible near-white.
+        - Additionally, the staff-list DELETE button was changed to `backgroundColor: colors.debtRed`
+          so the trash icon is both visible AND semantically red (destructive).
+
+      Please verify:
+
+      FRONTEND (dark mode only — must simulate `prefers-color-scheme: dark`):
+        1. Sign in as testuser (test1234). On the home screen:
+           - `add-customer-fab` renders as a solid blue circle with a clearly visible white `+` icon.
+           - `store-switcher` chevron and the tab icons render in a legible blue color.
+        2. Tap the FAB, add-customer screen:
+           - `add-customer-submit` button "حفظ الزبون" is a solid blue button with visible white
+             "حفظ الزبون" text (previously the button appeared entirely white).
+        3. Go to Staff screen (open sidebar → موظفون or navigate via URL /(app)/staff):
+           - Existing staff cards' delete button (`staff-delete-<id>`) is a red circle with a
+             clearly visible white trash icon (previously white on white in dark mode).
+           - Add-staff modal submit button is blue with visible white text.
+        4. Sign out, log back in as admin/admin1234 — verify the profile button icon in the
+           dashboard header (person-circle) is blue+visible; the "إعادة تعيين" button in each
+           card is blue with visible white text.
+        5. Light mode remains unchanged: run the same checks in light mode and confirm the
+           previously working styles still look correct (buttons still readable, no washed-out
+           surfaces).
+
+      BACKEND
+        - No backend changes in this iteration. Iteration 10 tests are still valid.
+
+      Files changed:
+        - /app/frontend/src/theme.ts (dark palette: primary + primaryText)
+        - /app/frontend/app/(app)/staff.tsx (delete btn bg → colors.debtRed)
+
+      Report to /app/test_reports/iteration_11.json.
+
   - agent: "main"
     message: |
       Iteration 10 — Editable transaction message templates for both customers and suppliers.

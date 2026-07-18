@@ -120,7 +120,7 @@ export default function StaffScreen() {
       </TouchableOpacity>
       <TouchableOpacity
         testID={`staff-delete-${item.id}`}
-        style={[styles.smallBtn, { backgroundColor: colors.primary }]}
+        style={[styles.smallBtn, { backgroundColor: colors.debtRed }]}
         onPress={() => remove(item)}
       >
         <Ionicons name="trash" size={16} color={colors.white} />

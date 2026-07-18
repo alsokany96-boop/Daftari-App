@@ -27,8 +27,11 @@ const dark = {
   background: "#0B1220",
   surface: "#111827",
   surfaceAlt: "#1F2937",
-  primary: "#F8FAFC",
-  primaryText: "#0F172A",
+  // Primary is used as the base CTA background AND as a text/icon accent color.
+  // A vibrant blue is legible on the dark background AND provides high contrast
+  // for white text/icons layered on top of it.
+  primary: "#3B82F6",
+  primaryText: "#FFFFFF",
   debtRed: "#F87171",
   debtRedDark: "#EF4444",
   debtRedBg: "#3F1D1D",
