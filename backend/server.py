@@ -183,6 +183,11 @@ class ChangePasswordRequest(BaseModel):
     verification_code: Optional[str] = None  # Required for employees
 
 
+class ProfileUpdateRequest(BaseModel):
+    shop_name: Optional[str] = None
+    phone: Optional[str] = None
+
+
 class ForgotPinRequest(BaseModel):
     username: str
 
@@ -538,6 +543,28 @@ async def login(payload: UserLogin):
 @api_router.get('/auth/me', response_model=UserPublic)
 async def me(current_user: Annotated[dict, Depends(get_current_user)]):
     return await to_user_public_effective(current_user)
+
+
+@api_router.put('/auth/profile', response_model=UserPublic)
+async def update_own_profile(
+    payload: ProfileUpdateRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
+    """Users update their own display name (shop_name) and phone in-app.
+    Deliberately uses `get_current_user` (not `require_active_user`) so admins
+    and locked owners can still fix their contact info.
+    """
+    updates: dict = {}
+    if payload.shop_name is not None:
+        cleaned = payload.shop_name.strip()
+        updates['shop_name'] = cleaned or None
+    if payload.phone is not None:
+        cleaned = payload.phone.strip()
+        updates['phone'] = cleaned or None
+    if updates:
+        await db.users.update_one({'id': current_user['id']}, {'$set': updates})
+    u = await db.users.find_one({'id': current_user['id']}, {'_id': 0})
+    return await to_user_public_effective(u)
 
 
 @api_router.post('/auth/change-password')

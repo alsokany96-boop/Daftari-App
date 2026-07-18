@@ -136,6 +136,8 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   me: () => request<UserPublic>("/auth/me"),
+  updateProfile: (payload: { shop_name?: string | null; phone?: string | null }) =>
+    request<UserPublic>("/auth/profile", { method: "PUT", body: JSON.stringify(payload) }),
   changePassword: (current_password: string, new_password: string, verification_code?: string) =>
     request<{ ok: boolean }>("/auth/change-password", {
       method: "POST",

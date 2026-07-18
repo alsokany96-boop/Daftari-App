@@ -174,20 +174,80 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.2"
-  test_sequence: 6
+  version: "1.3"
+  test_sequence: 7
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Monthly subscription with 30-day expiry"
-    - "Per-store 10-customer free-tier lock"
-    - "Admin activate/extend/deactivate subscription endpoints"
+    - "Sign-out from subscription-lock screen"
+    - "Admin profile self-service endpoint PUT /api/auth/profile"
+    - "Admin profile UI screen (name/phone/password)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: |
+      Iteration 7 — Sign-out escape hatch + Admin Profile self-service.
+
+      BUG FIXED (High):
+        - Subscription-lock screen previously trapped users. The confirm-signout modal called
+          signOut() but never navigated, so Expo Router kept the URL and the user appeared stuck.
+        - Fix: subscription-lock.tsx now
+            (a) explicitly router.replace('/sign-in') inside the confirm handler AFTER signOut, and
+            (b) has a useEffect that routes to /sign-in whenever `user` becomes null.
+
+      FEATURE ADDED (Admin Profile):
+        - Backend: PUT /api/auth/profile (auth required, no active-user gate) updates the caller's
+          own shop_name (display name) and phone. Only mutates own record.
+        - Frontend: /app/(app)/admin-profile.tsx — two-section screen (info + password) gated to
+          role='super_admin' (non-admin roles are bounced back via useEffect).
+        - Admin dashboard header now has an `admin-profile-open` button opening the new screen.
+        - Uses existing api.changePassword for the password section (current + new + confirm).
+
+      Please test the following END-TO-END.
+
+      BACKEND
+        1. PUT /api/auth/profile (admin token, {shop_name:"مشرف دفتري", phone:"0926609606"}) →
+           returns updated UserPublic with the new fields. Verify persisted in Mongo.
+        2. Same endpoint with owner token (testuser) → also works for own account (self-service is
+           allowed for all authenticated users; frontend gate is what restricts admin-only UI).
+        3. Passing an empty shop_name string clears it to null; whitespace-only is treated as empty.
+        4. Endpoint requires a valid Bearer token (401 without).
+        5. Endpoint does NOT require an active subscription — a locked owner must still be able
+           to call it (still authenticated via get_current_user only).
+
+      FRONTEND
+        1. Sign in as testuser (test1234). Seed 10 customers via API so the user hits the lock
+           screen. Open the app in the web preview — confirm `signout-lock-button` opens the
+           `signout-lock-confirm` dialog and tapping "تسجيل الخروج" now takes the user back to
+           /sign-in (previously it was unresponsive). Delete the extra 9 seeded customers to
+           restore testuser to its clean state at the end.
+        2. Sign in as admin/admin1234. Confirm the new `admin-profile-open` button appears in the
+           dashboard header (person-circle-outline icon).
+        3. Tap it → `admin-profile-screen` renders with the current name (shop_name) and phone
+           prefilled. Change the name to "مشرف دفتري" and phone to "0926609606", tap
+           `admin-profile-info-save`, and observe the success text + verify refreshUser reflects
+           the change on next `/auth/me`.
+        4. Empty name → shows error "الرجاء إدخال اسم المشرف".
+        5. Password card: fill current wrong password → error "كلمة المرور الحالية غير صحيحة".
+           Fill correct current password, new pw "admin1234", confirm mismatch → mismatch error.
+           Fill correctly (keep password = admin1234 for future test runs) → success text.
+        6. Attempt to visit /admin-profile as testuser (owner) — screen must NOT render; user is
+           bounced back to /home.
+        7. Cleanup: ensure admin login credentials still admin/admin1234 at the end.
+
+      Files changed:
+        - /app/backend/server.py (added ProfileUpdateRequest and PUT /auth/profile)
+        - /app/frontend/src/utils/api.ts (added updateProfile)
+        - /app/frontend/app/subscription-lock.tsx (sign-out redirect fix)
+        - /app/frontend/app/(app)/admin.tsx (profile header button)
+        - /app/frontend/app/(app)/admin-profile.tsx (new screen)
+
+      Credentials: /app/memory/test_credentials.md.
+
   - agent: "main"
     message: |
       Iteration 6 — Subscription overhaul. Please retest the following END-TO-END.

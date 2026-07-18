@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, UserPublic, ResetCodeRow, whatsappUrl } from "@/src/utils/api";
 import { useSession } from "@/src/ctx/SessionProvider";
@@ -263,6 +263,14 @@ export default function AdminDashboardScreen() {
           <Text style={styles.appTitle}>لوحة المشرف</Text>
           <Text style={styles.appSubtitle}>{user?.username}</Text>
         </View>
+        <TouchableOpacity
+          testID="admin-profile-open"
+          onPress={() => router.push("/(app)/admin-profile")}
+          style={styles.iconBtn}
+          hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+        >
+          <Ionicons name="person-circle-outline" size={28} color={colors.primary} />
+        </TouchableOpacity>
         <TouchableOpacity
           testID="admin-signout"
           onPress={() => setShowSignOut(true)}

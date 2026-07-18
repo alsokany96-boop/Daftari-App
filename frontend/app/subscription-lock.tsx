@@ -17,9 +17,16 @@ export default function SubscriptionLockScreen() {
 
   // Once the user becomes active again (admin activated / extended subscription
   // OR the customer count went back under the free-tier limit), bounce back
-  // through the root redirect so the normal home/admin screen loads.
+  // through the root redirect so the normal home/admin screen loads. Also
+  // handle the case where the user signs out from this locked screen — the
+  // session becomes null but expo-router keeps this URL, so we must redirect
+  // ourselves.
   useEffect(() => {
-    if (user && user.is_active && !user.is_locked) {
+    if (!user) {
+      router.replace("/sign-in");
+      return;
+    }
+    if (user.is_active && !user.is_locked) {
       router.replace("/");
     }
   }, [user]);
@@ -137,7 +144,13 @@ export default function SubscriptionLockScreen() {
         onCancel={() => setShowSignOut(false)}
         onConfirm={async () => {
           setShowSignOut(false);
-          await signOut();
+          try {
+            await signOut();
+          } finally {
+            // Explicit navigation guarantees we leave the lock screen even if
+            // the state update or route guard is racy under Expo Router.
+            router.replace("/sign-in");
+          }
         }}
         testID="signout-lock-confirm"
       />
