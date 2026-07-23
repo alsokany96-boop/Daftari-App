@@ -1296,28 +1296,32 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-possible_paths = [
-    os.path.join(BASE_DIR, "frontend"),
-    os.path.abspath("../frontend"),
-    os.path.abspath("frontend")
+
+possible_frontend_dirs = [
+    os.path.join(BASE_DIR, "frontend", "dist"),
+    os.path.join(BASE_DIR, "frontend", "web-build"),
+    os.path.join(BASE_DIR, "frontend", "public"),
+    os.path.join(BASE_DIR, "frontend")
 ]
 
-frontend_path = None
-for path in possible_paths:
-    if os.path.exists(path):
-        frontend_path = path
+target_dir = None
+for directory in possible_frontend_dirs:
+    if os.path.exists(directory):
+        target_dir = directory
         break
 
-if frontend_path:
-    app.mount("/static", StaticFiles(directory=frontend_path), name="static")
+if target_dir:
+    app.mount("/static", StaticFiles(directory=target_dir), name="static")
 
     @app.get("/")
     async def serve_index():
-        index_file = os.path.join(frontend_path, "index.html")
-        if os.path.exists(index_file):
-            return FileResponse(index_file)
-        return HTMLResponse(content="<h1>Index.html not found</h1>", status_code=404)
+        for index_name in ["index.html", "app.html"]:
+            file_path = os.path.join(target_dir, index_name)
+            if os.path.exists(file_path):
+                return FileResponse(file_path)
+        
+        return {"status": "Frontend dir found", "path": target_dir, "files": os.listdir(target_dir)}
 else:
     @app.get("/")
     async def serve_missing():
-        return {"error": "Frontend folder not found", "checked_paths": possible_paths}
+        return {"error": "Frontend directory not found"}
