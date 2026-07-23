@@ -1291,15 +1291,20 @@ async def migrate_data():
 async def shutdown_db_client():
     client.close()
     
+import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+frontend_path = os.path.join(BASE_DIR, "frontend")
+index_file = os.path.join(frontend_path, "index.html")
 
 if os.path.exists(frontend_path):
     app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
     @app.get("/")
     async def serve_index():
-        return FileResponse(os.path.join(frontend_path, "index.html"))
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return {"error": "index.html not found", "path_checked": index_file}
 
