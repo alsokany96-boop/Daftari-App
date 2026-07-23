@@ -1293,18 +1293,31 @@ async def shutdown_db_client():
     
 import os
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-frontend_path = os.path.join(BASE_DIR, "frontend")
-index_file = os.path.join(frontend_path, "index.html")
+possible_paths = [
+    os.path.join(BASE_DIR, "frontend"),
+    os.path.abspath("../frontend"),
+    os.path.abspath("frontend")
+]
 
-if os.path.exists(frontend_path):
+frontend_path = None
+for path in possible_paths:
+    if os.path.exists(path):
+        frontend_path = path
+        break
+
+if frontend_path:
     app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
     @app.get("/")
     async def serve_index():
+        index_file = os.path.join(frontend_path, "index.html")
         if os.path.exists(index_file):
             return FileResponse(index_file)
-        return {"error": "index.html not found", "path_checked": index_file}
-
+        return HTMLResponse(content="<h1>Index.html not found</h1>", status_code=404)
+else:
+    @app.get("/")
+    async def serve_missing():
+        return {"error": "Frontend folder not found", "checked_paths": possible_paths}
