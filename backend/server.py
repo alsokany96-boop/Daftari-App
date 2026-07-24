@@ -1293,13 +1293,20 @@ async def shutdown_db_client():
     
 @app.get("/")
 async def serve_index():
-    frontend_path = os.path.join(ROOT_DIR, "frontend", "dist", "index.html")
-    if os.path.exists(frontend_path):
-        return FileResponse(frontend_path)
+    possible_paths = [
+        os.path.join(ROOT_DIR, "frontend", "dist", "index.html"),
+        os.path.join(ROOT_DIR, "frontend", "web-build", "index.html"),
+        os.path.join(ROOT_DIR, "frontend", "public", "index.html"),
+        os.path.join(ROOT_DIR, "frontend", "index.html"),
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            return FileResponse(path)
+            
     return JSONResponse(
         status_code=200,
         content={
             "status": "Daftari API is Running Successfully!",
-            "message": "Backend connected. Please build frontend locally or deploy static files."
+            "message": "Backend connected. Waiting for frontend build."
         }
     )
