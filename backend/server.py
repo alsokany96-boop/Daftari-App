@@ -1291,45 +1291,14 @@ async def migrate_data():
 async def shutdown_db_client():
     client.close()
     
-import os
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(CURRENT_DIR)
 
 possible_frontend_dirs = [
-    os.path.join(BASE_DIR, "frontend", "dist"),
-    os.path.join(BASE_DIR, "frontend", "web-build"),
-    os.path.join(BASE_DIR, "frontend", "public"),
-    os.path.join(BASE_DIR, "frontend")
+    os.path.join(PARENT_DIR, "frontend"),
+    os.path.join(PARENT_DIR, "frontend", "dist"),
+    os.path.join(PARENT_DIR, "frontend", "public"),
+    os.path.join(PARENT_DIR, "frontend", "web-build"),
+    os.path.join(os.getcwd(), "frontend"),
+    os.path.join(os.getcwd(), "..", "frontend"),
 ]
-
-target_dir = None
-for directory in possible_frontend_dirs:
-    if os.path.exists(directory):
-        target_dir = directory
-        break
-
-if target_dir:
-    try:
-        app.mount("/static", StaticFiles(directory=target_dir), name="static")
-    except Exception:
-        pass
-
-    @app.get("/")
-    async def serve_index():
-        for index_name in ["index.html", "app.html"]:
-            file_path = os.path.join(target_dir, index_name)
-            if os.path.exists(file_path):
-                with open(file_path, "r", encoding="utf-8") as f:
-                    return HTMLResponse(content=f.read())
-        
-        return JSONResponse(content={
-            "status": "Frontend dir found",
-            "path": target_dir,
-            "files": os.listdir(target_dir)
-        })
-else:
-    @app.get("/")
-    async def serve_missing():
-        return JSONResponse(content={"error": "Frontend directory not found"})
