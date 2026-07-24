@@ -1292,13 +1292,32 @@ async def shutdown_db_client():
     client.close()
     
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(CURRENT_DIR)
+ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 
 possible_frontend_dirs = [
-    os.path.join(PARENT_DIR, "frontend"),
-    os.path.join(PARENT_DIR, "frontend", "dist"),
-    os.path.join(PARENT_DIR, "frontend", "public"),
-    os.path.join(PARENT_DIR, "frontend", "web-build"),
-    os.path.join(os.getcwd(), "frontend"),
-    os.path.join(os.getcwd(), "..", "frontend"),
+    os.path.join(ROOT_DIR, "frontend", "dist"),
+    os.path.join(ROOT_DIR, "frontend", "web-build"),
+    os.path.join(ROOT_DIR, "frontend", "public"),
+    os.path.join(ROOT_DIR, "frontend"),
 ]
+
+target_dir = None
+for directory in possible_frontend_dirs:
+    if os.path.exists(directory):
+        target_dir = directory
+        break
+
+if target_dir:
+    try:
+        app.mount("/static", StaticFiles(directory=target_dir), name="static")
+    except Exception:
+        pass
+
+@app.get("/")
+async def serve_index():
+    if target_dir:
+        for index_name in ["index.html", "app.html"]:
+            file_path = os.path.join(target_dir, index_name)
+            if os.path.exists(file_path):
+                return FileResponse(file_path)
+    return JSONResponse(content={"status": "Frontend not ready yet", "target_dir": target_dir})
