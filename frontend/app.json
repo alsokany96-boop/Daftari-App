@@ -12,7 +12,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.billkeeper.jm9bck",
       "infoPlist": {
-        "NSCameraUsageDescription": "التقط صور الفواتير مع كل عملية",
+        "NSCameraUsageDescription": "التقاط صور الفواتير مع كل عملية",
         "NSPhotoLibraryUsageDescription": "أرفق صور الفواتير من معرضك"
       }
     },
@@ -53,11 +53,11 @@
         "expo-image-picker",
         {
           "photosPermission": "أرفق صور الفواتير من معرضك",
-          "cameraPermission": "التقط صور الفواتير مع كل عملية"
+          "cameraPermission": "التقاط صور الفواتير مع كل عملية"
         }
       ]
     ],
-        "experiments": {
+    "experiments": {
       "typedRoutes": true
     },
     "owner": "alalosys-team",
@@ -67,3 +67,4 @@
       }
     }
   }
+}
