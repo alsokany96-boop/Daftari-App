@@ -57,8 +57,13 @@
         }
       ]
     ],
-    "experiments": {
+        "experiments": {
       "typedRoutes": true
+    },
+    "owner": "alalosys-team",
+    "extra": {
+      "eas": {
+        "projectId": "daftari-app"
+      }
     }
   }
-}
